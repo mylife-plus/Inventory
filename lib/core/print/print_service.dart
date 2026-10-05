@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,21 +13,29 @@ import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 
 /// Thermal-friendly PDF print (58mm / 80mm) for QR labels & receipts.
-/// Uses Noto Sans so € / Unicode currency symbols render correctly.
+/// Uses bundled Inter (assets/google_fonts) so € / Unicode render offline.
 class PrintService {
   static ({pw.Font regular, pw.Font bold})? _fontCache;
 
-  /// Bundled Noto Sans (assets/fonts). Previously fetched from Google Fonts
-  /// over the network on every print — slow, and it never finished offline,
-  /// which made "Print label" appear to hang.
+  /// Bundled Inter TTFs — same family as the UI. Loaded via rootBundle only
+  /// (never PdfGoogleFonts / network). Sequential loads avoid a Dart 3.10
+  /// Future.wait + SynchronousFuture bug that returned an empty list.
   static Future<({pw.Font regular, pw.Font bold})> _fonts() async {
     final cached = _fontCache;
     if (cached != null) return cached;
-    final data = await Future.wait([
-      rootBundle.load('assets/fonts/NotoSans-Regular.ttf'),
-      rootBundle.load('assets/fonts/NotoSans-Bold.ttf'),
-    ]);
-    final fonts = (regular: pw.Font.ttf(data[0]), bold: pw.Font.ttf(data[1]));
+    final regularData =
+        await rootBundle.load('assets/google_fonts/Inter-Regular.ttf');
+    final boldData =
+        await rootBundle.load('assets/google_fonts/Inter-Bold.ttf');
+    final fonts = (
+      regular: pw.Font.ttf(regularData),
+      bold: pw.Font.ttf(boldData),
+    );
+    debugPrint(
+      'PrintService fonts ready: '
+      'regular=${fonts.regular.fontName} bold=${fonts.bold.fontName} '
+      '(${regularData.lengthInBytes}+${boldData.lengthInBytes} bytes)',
+    );
     _fontCache = fonts;
     return fonts;
   }
@@ -36,8 +45,9 @@ class PrintService {
   static Future<void> preload() async {
     try {
       await _fonts();
-    } catch (_) {
-      // Printing will surface the error.
+    } catch (e, st) {
+      // Printing will surface the error to the user; log for device debugging.
+      debugPrint('PrintService.preload failed: $e\n$st');
     }
   }
 
@@ -83,21 +93,14 @@ class PrintService {
     String? companyName,
     PdfPageFormat format = PdfPageFormat.a4,
   }) async {
-    final fonts = await _fonts();
-    final doc = pw.Document();
-    final qrSize = format.width < 200 ? 110.0 : 160.0;
-    final company = companyName?.trim() ?? '';
     // Build the PDF once up front (not inside onLayout) so the system print
     // sheet opens immediately and onLayout can never stall it.
-    final bytes = await _buildQrDoc(
-      doc: doc,
-      fonts: fonts,
-      format: format,
-      qrSize: qrSize,
-      company: company,
+    final bytes = await buildQrLabelPdf(
       title: title,
       subtitle: subtitle,
       qrData: qrData,
+      companyName: companyName,
+      format: format,
     );
 
     // System print UI (printers list + Cancel) — Cancel returns to the app.
@@ -106,6 +109,27 @@ class PrintService {
       name: 'QR-$title',
       format: PdfPageFormat.a4,
       dynamicLayout: false,
+    );
+  }
+
+  /// QR label PDF bytes (used for printing and sharing; testable offline).
+  static Future<Uint8List> buildQrLabelPdf({
+    required String title,
+    required String subtitle,
+    required String qrData,
+    String? companyName,
+    PdfPageFormat format = PdfPageFormat.a4,
+  }) async {
+    final fonts = await _fonts();
+    return _buildQrDoc(
+      doc: pw.Document(),
+      fonts: fonts,
+      format: format,
+      qrSize: format.width < 200 ? 110.0 : 160.0,
+      company: companyName?.trim() ?? '',
+      title: title,
+      subtitle: subtitle,
+      qrData: qrData,
     );
   }
 
@@ -124,7 +148,13 @@ class PrintService {
       pw.Page(
         pageFormat: format,
         margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-        theme: pw.ThemeData.withFont(base: fonts.regular, bold: fonts.bold),
+        theme: pw.ThemeData.withFont(
+          base: fonts.regular,
+          bold: fonts.bold,
+          italic: fonts.regular,
+          boldItalic: fonts.bold,
+          icons: fonts.regular,
+        ),
         build: (context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -136,7 +166,6 @@ class PrintService {
                   style: pw.TextStyle(
                     font: fonts.bold,
                     fontSize: 11,
-                    fontWeight: pw.FontWeight.bold,
                   ),
                 ),
                 pw.SizedBox(height: 10),
@@ -146,6 +175,7 @@ class PrintService {
                 data: qrData,
                 width: qrSize,
                 height: qrSize,
+                drawText: false,
               ),
               pw.SizedBox(height: 12),
               pw.Text(
@@ -154,7 +184,6 @@ class PrintService {
                 style: pw.TextStyle(
                   font: fonts.bold,
                   fontSize: 14,
-                  fontWeight: pw.FontWeight.bold,
                 ),
               ),
               pw.SizedBox(height: 4),
@@ -184,14 +213,19 @@ class PrintService {
       pw.Page(
         pageFormat: format,
         margin: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        theme: pw.ThemeData.withFont(base: fonts.regular, bold: fonts.bold),
+        theme: pw.ThemeData.withFont(
+          base: fonts.regular,
+          bold: fonts.bold,
+          italic: fonts.regular,
+          boldItalic: fonts.bold,
+          icons: fonts.regular,
+        ),
         build: (context) {
           pw.TextStyle body([double size = 8]) =>
               pw.TextStyle(font: fonts.regular, fontSize: size);
           pw.TextStyle bold([double size = 9]) => pw.TextStyle(
                 font: fonts.bold,
                 fontSize: size,
-                fontWeight: pw.FontWeight.bold,
               );
 
           return pw.Column(
@@ -300,6 +334,7 @@ class PrintService {
                   data: 'https://tocca.io/r/${sale.id}',
                   width: 72,
                   height: 72,
+                  drawText: false,
                 ),
               ),
               pw.SizedBox(height: 6),

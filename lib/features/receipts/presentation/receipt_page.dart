@@ -18,6 +18,7 @@ import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:inventory_app/core/share/share_origin.dart';
 
 class ReceiptPage extends ConsumerStatefulWidget {
   const ReceiptPage({super.key, required this.saleId});
@@ -132,7 +133,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
 
     final contacts = customer?.allContacts ?? const <CustomerContact>[];
     if (contacts.isEmpty) {
-      await SharePlus.instance.share(ShareParams(text: body));
+      await shareWithOrigin(ShareParams(text: body), context);
       return;
     }
 
@@ -184,8 +185,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                         ),
                         onTap: () async {
                           Navigator.pop(ctx);
-                          await SharePlus.instance
-                              .share(ShareParams(text: body));
+                          await shareWithOrigin(ShareParams(text: body), ctx);
                         },
                       )
                     else ...[
@@ -230,8 +230,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                         ),
                         onTap: () async {
                           Navigator.pop(ctx);
-                          await SharePlus.instance
-                              .share(ShareParams(text: body));
+                          await shareWithOrigin(ShareParams(text: body), ctx);
                         },
                       ),
                     ],
@@ -733,6 +732,7 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
   Future<void> _exportReceipts(List<Sale> sales) async {
     final settings = ref.read(shopSettingsProvider).valueOrNull;
     await CsvExportService().exportReceipts(
+      context: context,
       sales: sales,
       currency: settings?.currencySymbol ?? '€',
       companyName: settings?.companyName,
@@ -962,7 +962,8 @@ class ReceiptsYearPage extends ConsumerWidget {
 
     Future<void> exportYear(List<Sale> yearSales) async {
       await CsvExportService().exportReceipts(
-        sales: yearSales,
+      context: context,
+      sales: yearSales,
         currency: settings?.currencySymbol ?? '€',
         companyName: settings?.companyName,
         from: DateTime(year, 1, 1),

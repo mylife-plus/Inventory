@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/print/print_service.dart';
 import 'package:inventory_app/core/qr/qr_payload.dart';
+import 'package:inventory_app/core/share/share_origin.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
@@ -12,6 +13,8 @@ import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:pdf/pdf.dart';
+import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// Default label subtitle: "price per unit", or just the price without a unit.
@@ -164,39 +167,65 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     try {
       await _persist();
       if (!mounted) return;
-      await PrintService.printQrLabel(
+      // Build PDF while busy, then clear BEFORE the system print sheet so a
+      // stuck/cancelled sheet can never leave Print + Share disabled.
+      final bytes = await PrintService.buildQrLabelPdf(
         title: _labelTitle,
         subtitle: _labelSubtitle,
         qrData: _qrData,
         companyName: ref.read(shopSettingsProvider).valueOrNull?.companyName,
       );
-    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      await Printing.layoutPdf(
+        onLayout: (_) async => bytes,
+        name: 'QR-$_labelTitle',
+        format: PdfPageFormat.a4,
+        dynamicLayout: false,
+      );
+    } catch (e, st) {
+      debugPrint('Print label failed: $e\n$st');
       if (mounted) {
+        setState(() => _busy = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${ref.read(tProvider)('print_failed')}: $e')),
         );
       }
-    } finally {
-      // Always regain control after the system print sheet closes / fails.
-      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _share() async {
+  Future<void> _share(BuildContext buttonContext) async {
+    if (_busy) return;
     final payload = _payload;
     if (payload == null) return;
-    await _persist();
-    final company =
-        ref.read(shopSettingsProvider).valueOrNull?.companyName.trim() ?? '';
-    final buffer = StringBuffer();
-    if (company.isNotEmpty) buffer.writeln(company);
-    buffer
-      ..writeln(_labelTitle)
-      ..writeln(_labelSubtitle);
-    final link = _labelLink;
-    if (link != null) buffer.writeln(link);
-    buffer.writeln(payload);
-    await SharePlus.instance.share(ShareParams(text: buffer.toString()));
+    setState(() => _busy = true);
+    try {
+      await _persist();
+      if (!mounted) return;
+      final company =
+          ref.read(shopSettingsProvider).valueOrNull?.companyName.trim() ?? '';
+      final buffer = StringBuffer();
+      if (company.isNotEmpty) buffer.writeln(company);
+      buffer
+        ..writeln(_labelTitle)
+        ..writeln(_labelSubtitle);
+      final link = _labelLink;
+      if (link != null) buffer.writeln(link);
+      buffer.writeln(payload);
+      setState(() => _busy = false);
+      await shareWithOrigin(
+        ShareParams(text: buffer.toString()),
+        buttonContext,
+      );
+    } catch (e, st) {
+      debugPrint('Share label failed: $e\n$st');
+      if (mounted) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${ref.read(tProvider)('share_failed')}: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _copy() async {
@@ -375,9 +404,11 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
                 ),
               ),
               const SizedBox(width: 10),
-              _RoundAction(
-                icon: Icons.ios_share_rounded,
-                onTap: _busy ? null : _share,
+              Builder(
+                builder: (btnCtx) => _RoundAction(
+                  icon: Icons.ios_share_rounded,
+                  onTap: _busy ? null : () => _share(btnCtx),
+                ),
               ),
               const SizedBox(width: 8),
               _RoundAction(

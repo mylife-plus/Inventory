@@ -547,6 +547,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                                         to: range.$2,
                                       );
                                   await CsvExportService().exportTurnover(
+                                    context: context,
                                     items: exportItems,
                                     sales: exportSales,
                                     currency:

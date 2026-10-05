@@ -300,7 +300,7 @@ class SettingsPage extends ConsumerWidget {
     S t,
   ) async {
     try {
-      await AppBackupService(ref.read(databaseProvider)).shareBackup();
+      await AppBackupService(ref.read(databaseProvider)).shareBackup(context: context);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t('backup_saved'))),

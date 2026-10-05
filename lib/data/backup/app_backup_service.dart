@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+import 'package:inventory_app/core/share/share_origin.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -63,13 +65,14 @@ class AppBackupService {
     return file;
   }
 
-  Future<void> shareBackup() async {
+  Future<void> shareBackup({BuildContext? context}) async {
     final file = await exportToFile();
-    await SharePlus.instance.share(
+    await shareWithOrigin(
       ShareParams(
         files: [XFile(file.path)],
         text: 'Inventory app data backup',
       ),
+      context,
     );
   }
 

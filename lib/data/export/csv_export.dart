@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+import 'package:inventory_app/core/share/share_origin.dart';
 import 'dart:io';
 
 import 'package:intl/intl.dart';
@@ -11,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 /// One professional CSV file with summary + sold items + sale lines.
 class CsvExportService {
   Future<void> exportTurnover({
+    BuildContext? context,
     required List<SoldItemAgg> items,
     required List<Sale> sales,
     required String currency,
@@ -127,15 +130,17 @@ class CsvExportService {
     final file = File(p.join(dir.path, 'turnover_$stamp.csv'));
     await file.writeAsString(buf.toString(), flush: true);
 
-    await SharePlus.instance.share(
+    await shareWithOrigin(
       ShareParams(
         files: [XFile(file.path, mimeType: 'text/csv')],
         subject: 'Turnover export $stamp',
       ),
+      context,
     );
   }
 
   Future<void> exportReceipts({
+    BuildContext? context,
     required List<Sale> sales,
     required String currency,
     String? companyName,
@@ -224,11 +229,12 @@ class CsvExportService {
     final file = File(p.join(dir.path, 'receipts_$stamp.csv'));
     await file.writeAsString(buf.toString(), flush: true);
 
-    await SharePlus.instance.share(
+    await shareWithOrigin(
       ShareParams(
         files: [XFile(file.path, mimeType: 'text/csv')],
         subject: 'Receipts export $stamp',
       ),
+      context,
     );
   }
 

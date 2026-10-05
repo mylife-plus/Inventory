@@ -120,6 +120,7 @@ class AppDatabase {
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         await _ensureCustomerColumns(db);
+        await _ensureInventoryItemColumns(db);
         if (oldVersion < 8) {
           // Old installs defaulted to TND; Euro is the first-launch default.
           await db.update(
@@ -132,6 +133,7 @@ class AppDatabase {
       onOpen: (db) async {
         // Repair schemas when version jumped without applying ALTERs.
         await _ensureCustomerColumns(db);
+        await _ensureInventoryItemColumns(db);
         await _relinkOrphanedSales(db);
       },
     );
@@ -159,6 +161,30 @@ class AppDatabase {
         AND TRIM(customer_name) != ''
         AND customer_name != 'Guest'
     ''');
+  }
+
+
+  /// Idempotent: add any missing inventory QR columns (safe for old installs).
+  static Future<void> _ensureInventoryItemColumns(Database db) async {
+    final rows = await db.rawQuery('PRAGMA table_info(inventory_items)');
+    final existing = <String>{
+      for (final r in rows) (r['name'] as String?) ?? '',
+    };
+    const needed = <String, String>{
+      'qr_title': 'TEXT',
+      'qr_subtitle': 'TEXT',
+      'qr_link': 'TEXT',
+      'alert_enabled': 'INTEGER NOT NULL DEFAULT 0',
+      'alert_amount': 'REAL NOT NULL DEFAULT 0',
+      'photo_path': 'TEXT',
+      'unit': 'TEXT',
+    };
+    for (final e in needed.entries) {
+      if (existing.contains(e.key)) continue;
+      await db.execute(
+        'ALTER TABLE inventory_items ADD COLUMN ${e.key} ${e.value}',
+      );
+    }
   }
 
   /// Idempotent: add any missing customer columns (safe for old installs).
