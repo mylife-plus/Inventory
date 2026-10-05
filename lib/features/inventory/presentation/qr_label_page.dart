@@ -107,7 +107,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     if (mounted) setState(() => _pdfBuilding = true);
     try {
       await PrintService.preload();
-      final bytes = await PrintService.buildQrLabelPdf(
+      final bytes = await PrintService.prepareQrLabelPrintPdf(
         title: _labelTitle,
         subtitle: _labelSubtitle,
         qrData: _qrData,
@@ -241,13 +241,14 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
       }
       final bytes = _pdfBytes;
       if (!mounted) return;
-      if (bytes == null || bytes.isEmpty || !_pdfReady) {
-        throw StateError('Label PDF not ready');
+      if (bytes == null || bytes.length < 800 || !_pdfReady) {
+        throw StateError('Label PDF not ready (${bytes?.length ?? 0} bytes)');
       }
       final ready = bytes;
       setState(() => _busy = false);
       // Persist in the background; don't delay the print sheet.
       unawaited(_persist());
+      debugPrint('QR label print tap: ${ready.length} bytes');
       await PrintService.layoutQrLabelPdf(
         bytes: ready,
         title: _labelTitle,

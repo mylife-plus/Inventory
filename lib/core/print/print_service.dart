@@ -18,9 +18,10 @@ class PrintService {
   static ({pw.Font regular, pw.Font bold})? _fontCache;
   static String? _labelPdfKey;
   static Uint8List? _labelPdfBytes;
+  static String? _labelPngKey;
+  static Uint8List? _labelPngBytes;
 
   /// Compact sticker size so the QR fills the iOS print preview.
-  /// (A4 left a tiny blob on a huge white page that looked "empty".)
   static final PdfPageFormat qrLabelFormat = PdfPageFormat(
     70 * PdfPageFormat.mm,
     100 * PdfPageFormat.mm,
@@ -28,6 +29,8 @@ class PrintService {
   );
 
   static const int _minPdfBytes = 800;
+  static const int _minPngBytes = 400;
+  static const double _rasterDpi = 300;
 
   /// Bundled Inter TTFs — same family as the UI. Loaded via rootBundle only
   /// (never PdfGoogleFonts / network). Sequential loads avoid a Dart 3.10
@@ -105,8 +108,8 @@ class PrintService {
     String? companyName,
     PdfPageFormat? format,
   }) async {
-    final pageFormat = format ?? qrLabelFormat;
-    final bytes = await buildQrLabelPdf(
+    final pageFormat = _finiteFormat(format);
+    final bytes = await prepareQrLabelPrintPdf(
       title: title,
       subtitle: subtitle,
       qrData: qrData,
@@ -123,9 +126,39 @@ class PrintService {
     );
   }
 
-  /// Opens the system print sheet with [bytes] built for [format].
-  /// If iOS requests a different paper size, rebuilds for that size so the
-  /// preview is never an empty mismatched page.
+  /// Build a print-ready PDF: vector label → high-DPI PNG → full-bleed image page.
+  /// Image pages do not go blank on iOS from font/paper-size mismatches.
+  static Future<Uint8List> prepareQrLabelPrintPdf({
+    required String title,
+    required String subtitle,
+    required String qrData,
+    String? companyName,
+    PdfPageFormat? format,
+  }) async {
+    final pageFormat = _finiteFormat(format);
+    try {
+      final png = await rasterQrLabelPng(
+        title: title,
+        subtitle: subtitle,
+        qrData: qrData,
+        companyName: companyName,
+      );
+      return wrapLabelImagePdf(png, pageFormat);
+    } catch (e, st) {
+      // Unit tests / rare host failures: still return a valid vector PDF.
+      debugPrint('QR label raster unavailable, vector fallback: $e\n$st');
+      return buildQrLabelPdf(
+        title: title,
+        subtitle: subtitle,
+        qrData: qrData,
+        companyName: companyName,
+        format: pageFormat,
+      );
+    }
+  }
+
+  /// Opens the system print sheet. [onLayout] always returns an image PDF for
+  /// the *requested* paper size (PNG is cached; wrap is cheap and deterministic).
   static Future<void> layoutQrLabelPdf({
     required Uint8List bytes,
     required String title,
@@ -134,37 +167,140 @@ class PrintService {
     String? companyName,
     PdfPageFormat? format,
   }) async {
-    final pageFormat = format ?? qrLabelFormat;
-    if (bytes.length < _minPdfBytes) {
-      throw StateError('QR label PDF too small (${bytes.length} bytes)');
+    final pageFormat = _finiteFormat(format);
+    _validatePdf(bytes, 'prebuilt');
+
+    Future<Uint8List> buildFor(PdfPageFormat requested) async {
+      final png = await rasterQrLabelPng(
+        title: title,
+        subtitle: subtitle,
+        qrData: qrData,
+        companyName: companyName,
+      );
+      final out = await wrapLabelImagePdf(png, _finiteFormat(requested));
+      debugPrint(
+        'QR label print open: ${out.length} bytes '
+        '(${_finiteFormat(requested).width.toStringAsFixed(1)}x'
+        '${_finiteFormat(requested).height.toStringAsFixed(1)}pt)',
+      );
+      return out;
     }
-    await Printing.layoutPdf(
-      onLayout: (requested) async {
-        // Same size → return prepared bytes (fast path).
-        if (_samePageSize(requested, pageFormat)) return bytes;
-        // Printer/user changed paper → rebuild so iOS does not show a blank page.
-        return buildQrLabelPdf(
-          title: title,
-          subtitle: subtitle,
-          qrData: qrData,
-          companyName: companyName,
-          format: requested,
-        );
-      },
-      name: 'QR-$title',
-      format: pageFormat,
-      dynamicLayout: false,
-      forceCustomPrintPaper: true,
+
+    Future<bool> openOnce() {
+      return Printing.layoutPdf(
+        onLayout: (requested) async {
+          try {
+            final out = await buildFor(requested);
+            _validatePdf(out, 'onLayout');
+            return out;
+          } catch (e, st) {
+            debugPrint('QR label onLayout failed, retrying once: $e\n$st');
+            // Bust PNG cache and retry once with a fresh raster.
+            _labelPngKey = null;
+            _labelPngBytes = null;
+            final out = await buildFor(requested);
+            _validatePdf(out, 'onLayout-retry');
+            return out;
+          }
+        },
+        name: 'QR-$title',
+        format: pageFormat,
+        dynamicLayout: true,
+        forceCustomPrintPaper: true,
+      );
+    }
+
+    debugPrint('QR label print sheet opening with ${bytes.length} bytes');
+    var ok = await openOnce();
+    if (!ok) {
+      // User cancel returns false — not an error. Only retry on throw.
+      return;
+    }
+  }
+
+  static void _validatePdf(Uint8List bytes, String label) {
+    if (bytes.length < _minPdfBytes) {
+      throw StateError('QR label PDF too small ($label: ${bytes.length} bytes)');
+    }
+    if (bytes.length < 5 ||
+        String.fromCharCodes(bytes.take(5)) != '%PDF-') {
+      throw StateError('QR label PDF missing header ($label)');
+    }
+  }
+
+  static PdfPageFormat _finiteFormat(PdfPageFormat? format) {
+    final f = format ?? qrLabelFormat;
+    if (f.width.isFinite && f.height.isFinite && f.width > 0 && f.height > 0) {
+      return f;
+    }
+    return qrLabelFormat;
+  }
+
+  /// High-DPI PNG of the label (cached per content). Uses Printing.raster.
+  static Future<Uint8List> rasterQrLabelPng({
+    required String title,
+    required String subtitle,
+    required String qrData,
+    String? companyName,
+  }) async {
+    final company = companyName?.trim() ?? '';
+    final key = '$title\x1f$subtitle\x1f$qrData\x1f$company';
+    final hit = _labelPngBytes;
+    if (hit != null && _labelPngKey == key && hit.length >= _minPngBytes) {
+      return hit;
+    }
+
+    final vector = await buildQrLabelPdf(
+      title: title,
+      subtitle: subtitle,
+      qrData: qrData,
+      companyName: company,
+      format: qrLabelFormat,
     );
+    final page =
+        await Printing.raster(vector, pages: const [0], dpi: _rasterDpi).first;
+    final png = await page.toPng();
+    if (png.length < _minPngBytes) {
+      throw StateError('QR label PNG too small (${png.length} bytes)');
+    }
+    _labelPngKey = key;
+    _labelPngBytes = png;
+    return png;
   }
 
-  static bool _samePageSize(PdfPageFormat a, PdfPageFormat b) {
-    return (a.width - b.width).abs() < 0.5 &&
-        (a.height - b.height).abs() < 0.5;
+  /// Wrap a PNG as a single full-bleed PDF page for [format].
+  /// No fonts — immune to Type1/Courier and paper-size blank pages.
+  static Future<Uint8List> wrapLabelImagePdf(
+    Uint8List png,
+    PdfPageFormat format,
+  ) async {
+    if (png.length < _minPngBytes) {
+      throw StateError('Cannot wrap tiny PNG (${png.length} bytes)');
+    }
+    final pageFormat = _finiteFormat(format);
+    final doc = pw.Document();
+    final image = pw.MemoryImage(png);
+    doc.addPage(
+      pw.Page(
+        pageFormat: pageFormat,
+        margin: pw.EdgeInsets.zero,
+        build: (_) {
+          return pw.Container(
+            width: pageFormat.width,
+            height: pageFormat.height,
+            color: PdfColors.white,
+            alignment: pw.Alignment.center,
+            child: pw.Image(image, fit: pw.BoxFit.contain),
+          );
+        },
+      ),
+    );
+    final bytes = await doc.save();
+    _validatePdf(bytes, 'wrap');
+    return bytes;
   }
 
-  /// QR label PDF bytes (used for printing and sharing; testable offline).
-  /// Cached for the session while [title]/[subtitle]/[qrData]/company match.
+  /// Vector QR label PDF bytes (source art before raster). Cached per content+format.
   static Future<Uint8List> buildQrLabelPdf({
     required String title,
     required String subtitle,
@@ -172,11 +308,14 @@ class PrintService {
     String? companyName,
     PdfPageFormat? format,
   }) async {
-    format ??= qrLabelFormat;
+    format = _finiteFormat(format);
     final company = companyName?.trim() ?? '';
-    final key = '$title\x1f$subtitle\x1f$qrData\x1f$company\x1f${format.width}x${format.height}';
+    final key =
+        '$title\x1f$subtitle\x1f$qrData\x1f$company\x1f${format.width}x${format.height}';
     final hit = _labelPdfBytes;
-    if (hit != null && _labelPdfKey == key && hit.isNotEmpty) return hit;
+    if (hit != null && _labelPdfKey == key && hit.length >= _minPdfBytes) {
+      return hit;
+    }
 
     final fonts = await _fonts();
     final bytes = await _buildQrDoc(
@@ -189,23 +328,26 @@ class PrintService {
       subtitle: subtitle,
       qrData: qrData,
     );
-    if (bytes.length < _minPdfBytes) {
-      // Never cache a failed/empty build — that caused blank sheets forever.
-      throw StateError('QR label PDF too small (${bytes.length} bytes)');
-    }
+    _validatePdf(bytes, 'vector');
     _labelPdfKey = key;
     _labelPdfBytes = bytes;
+    // Content changed → PNG cache is stale.
+    if (_labelPngKey != '$title\x1f$subtitle\x1f$qrData\x1f$company') {
+      _labelPngKey = null;
+      _labelPngBytes = null;
+    }
     return bytes;
   }
 
-  /// True when fonts are already decoded (first print after cold start is slow otherwise).
+  /// True when fonts are already decoded.
   static bool get fontsReady => _fontCache != null;
 
-  /// Rasterize page 0 to PNG for an on-screen proof the PDF is not empty.
+  /// @nodoc kept for callers; prefer [rasterQrLabelPng].
   static Future<Uint8List?> rasterQrLabelPreview(Uint8List pdfBytes) async {
     if (pdfBytes.length < _minPdfBytes) return null;
     try {
-      final page = await Printing.raster(pdfBytes, pages: [0], dpi: 140).first;
+      final page =
+          await Printing.raster(pdfBytes, pages: const [0], dpi: 140).first;
       return page.toPng();
     } catch (e, st) {
       debugPrint('QR label raster failed: $e\n$st');
