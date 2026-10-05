@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -157,8 +158,13 @@ class PrintService {
     }
   }
 
-  /// Opens the system print sheet. [onLayout] always returns an image PDF for
-  /// the *requested* paper size (PNG is cached; wrap is cheap and deterministic).
+  /// Opens the system print sheet.
+  ///
+  /// Critical: [onLayout] must NEVER call [Printing.raster] / nested print
+  /// channels — on Android that deadlocks the system print dialog so it never
+  /// finishes loading and the user cannot leave (no working back/X).
+  /// Rasterize up front; [onLayout] only wraps the cached PNG for the
+  /// requested paper size (fast, deterministic).
   static Future<void> layoutQrLabelPdf({
     required Uint8List bytes,
     required String title,
@@ -167,55 +173,57 @@ class PrintService {
     String? companyName,
     PdfPageFormat? format,
   }) async {
-    final pageFormat = _finiteFormat(format);
     _validatePdf(bytes, 'prebuilt');
 
-    Future<Uint8List> buildFor(PdfPageFormat requested) async {
-      final png = await rasterQrLabelPng(
-        title: title,
-        subtitle: subtitle,
-        qrData: qrData,
-        companyName: companyName,
-      );
-      final out = await wrapLabelImagePdf(png, _finiteFormat(requested));
+    // Finish raster BEFORE opening the system UI.
+    final png = await rasterQrLabelPng(
+      title: title,
+      subtitle: subtitle,
+      qrData: qrData,
+      companyName: companyName,
+    );
+
+    // Android PrintManager maps unknown sizes to UNKNOWN_PORTRAIT and some
+    // OEM print UIs then omit a reliable cancel/back. Use ISO A6 (predefined)
+    // so the system dialog always has a normal dismiss control. iOS keeps the
+    // compact sticker size + forceCustomPrintPaper.
+    final bool android = !kIsWeb && Platform.isAndroid;
+    final pageFormat = android ? PdfPageFormat.a6 : _finiteFormat(format);
+
+    Future<Uint8List> wrapOnly(PdfPageFormat requested) async {
+      final target = _finiteFormat(android ? pageFormat : requested);
+      final out = await wrapLabelImagePdf(png, target);
       debugPrint(
         'QR label print open: ${out.length} bytes '
-        '(${_finiteFormat(requested).width.toStringAsFixed(1)}x'
-        '${_finiteFormat(requested).height.toStringAsFixed(1)}pt)',
+        '(${target.width.toStringAsFixed(1)}x${target.height.toStringAsFixed(1)}pt'
+        '${android ? ', android-a6' : ''})',
       );
+      _validatePdf(out, 'onLayout');
       return out;
     }
 
-    Future<bool> openOnce() {
-      return Printing.layoutPdf(
-        onLayout: (requested) async {
-          try {
-            final out = await buildFor(requested);
-            _validatePdf(out, 'onLayout');
-            return out;
-          } catch (e, st) {
-            debugPrint('QR label onLayout failed, retrying once: $e\n$st');
-            // Bust PNG cache and retry once with a fresh raster.
-            _labelPngKey = null;
-            _labelPngBytes = null;
-            final out = await buildFor(requested);
-            _validatePdf(out, 'onLayout-retry');
-            return out;
-          }
-        },
-        name: 'QR-$title',
-        format: pageFormat,
-        dynamicLayout: true,
-        forceCustomPrintPaper: true,
-      );
-    }
+    debugPrint(
+      'QR label print sheet opening with ${bytes.length} bytes '
+      '(png ${png.length}, format '
+      '${pageFormat.width.toStringAsFixed(0)}x${pageFormat.height.toStringAsFixed(0)})',
+    );
 
-    debugPrint('QR label print sheet opening with ${bytes.length} bytes');
-    var ok = await openOnce();
-    if (!ok) {
-      // User cancel returns false — not an error. Only retry on throw.
-      return;
-    }
+    await Printing.layoutPdf(
+      onLayout: (requested) async {
+        try {
+          return await wrapOnly(requested);
+        } catch (e, st) {
+          debugPrint('QR label onLayout wrap failed, using prebuilt: $e\n$st');
+          // Last resort: return already-validated bytes (never re-raster here).
+          return bytes;
+        }
+      },
+      name: 'QR-$title',
+      format: pageFormat,
+      // Android: false avoids repeated onLayout while the dialog is open.
+      dynamicLayout: !android,
+      forceCustomPrintPaper: !android,
+    );
   }
 
   static void _validatePdf(Uint8List bytes, String label) {
