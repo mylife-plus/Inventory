@@ -16,6 +16,8 @@ import 'package:inventory_app/shared/widgets/app_sheets.dart';
 /// Uses bundled Inter (assets/google_fonts) so € / Unicode render offline.
 class PrintService {
   static ({pw.Font regular, pw.Font bold})? _fontCache;
+  static String? _labelPdfKey;
+  static Uint8List? _labelPdfBytes;
 
   /// Bundled Inter TTFs — same family as the UI. Loaded via rootBundle only
   /// (never PdfGoogleFonts / network). Sequential loads avoid a Dart 3.10
@@ -113,6 +115,7 @@ class PrintService {
   }
 
   /// QR label PDF bytes (used for printing and sharing; testable offline).
+  /// Cached for the session while [title]/[subtitle]/[qrData]/company match.
   static Future<Uint8List> buildQrLabelPdf({
     required String title,
     required String subtitle,
@@ -120,18 +123,32 @@ class PrintService {
     String? companyName,
     PdfPageFormat format = PdfPageFormat.a4,
   }) async {
+    final company = companyName?.trim() ?? '';
+    final key = '$title\x1f$subtitle\x1f$qrData\x1f$company\x1f${format.width}x${format.height}';
+    final hit = _labelPdfBytes;
+    if (hit != null && _labelPdfKey == key && hit.isNotEmpty) return hit;
+
     final fonts = await _fonts();
-    return _buildQrDoc(
+    final bytes = await _buildQrDoc(
       doc: pw.Document(),
       fonts: fonts,
       format: format,
       qrSize: format.width < 200 ? 110.0 : 160.0,
-      company: companyName?.trim() ?? '',
+      company: company,
       title: title,
       subtitle: subtitle,
       qrData: qrData,
     );
+    if (bytes.isEmpty) {
+      throw StateError('QR label PDF built empty (${bytes.length} bytes)');
+    }
+    _labelPdfKey = key;
+    _labelPdfBytes = bytes;
+    return bytes;
   }
+
+  /// True when fonts are already decoded (first print after cold start is slow otherwise).
+  static bool get fontsReady => _fontCache != null;
 
   static Future<Uint8List> _buildQrDoc({
     required pw.Document doc,

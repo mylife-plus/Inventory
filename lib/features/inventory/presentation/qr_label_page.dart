@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,9 +43,18 @@ class QrLabelPage extends ConsumerStatefulWidget {
 class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   bool _loading = true;
   bool _busy = false;
+  /// True while a background PDF rebuild is in flight (Print shows hourglass).
+  bool _pdfBuilding = false;
   InventoryItem? _item;
   String? _payload;
   String _defaultSubtitle = '';
+
+  /// Pre-built label PDF — Print only opens the sheet when this matches
+  /// [_pdfCacheKey] so iOS never gets an empty/slow onLayout rebuild.
+  Uint8List? _pdfBytes;
+  String? _pdfCacheKey;
+  Timer? _pdfDebounce;
+  int _pdfGen = 0;
 
   late final TextEditingController _titleCtrl;
   late final TextEditingController _subtitleCtrl;
@@ -58,11 +69,64 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     _titleCtrl.addListener(_onFieldsChanged);
     _subtitleCtrl.addListener(_onFieldsChanged);
     _linkCtrl.addListener(_onFieldsChanged);
+    // Warm fonts immediately (also started from main.dart).
+    unawaited(PrintService.preload());
     _load();
   }
 
   void _onFieldsChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {}); // live preview
+    _schedulePdfRebuild();
+  }
+
+  String get _companyName =>
+      ref.read(shopSettingsProvider).valueOrNull?.companyName ?? '';
+
+  String get _pdfKey =>
+      '$_labelTitle\x1f$_labelSubtitle\x1f$_qrData\x1f${_companyName.trim()}';
+
+  bool get _pdfReady =>
+      _pdfBytes != null &&
+      _pdfBytes!.isNotEmpty &&
+      _pdfCacheKey == _pdfKey;
+
+  void _schedulePdfRebuild() {
+    _pdfDebounce?.cancel();
+    _pdfDebounce = Timer(const Duration(milliseconds: 200), () {
+      unawaited(_rebuildPdfCache());
+    });
+  }
+
+  Future<void> _rebuildPdfCache() async {
+    if (_payload == null || _item == null) return;
+    final gen = ++_pdfGen;
+    final key = _pdfKey;
+    if (_pdfCacheKey == key && _pdfBytes != null && _pdfBytes!.isNotEmpty) {
+      if (mounted && _pdfBuilding) setState(() => _pdfBuilding = false);
+      return;
+    }
+    if (mounted) setState(() => _pdfBuilding = true);
+    try {
+      await PrintService.preload();
+      final bytes = await PrintService.buildQrLabelPdf(
+        title: _labelTitle,
+        subtitle: _labelSubtitle,
+        qrData: _qrData,
+        companyName: _companyName,
+      );
+      if (!mounted || gen != _pdfGen) return;
+      setState(() {
+        _pdfBytes = bytes;
+        _pdfCacheKey = key;
+        _pdfBuilding = false;
+      });
+    } catch (e, st) {
+      debugPrint('QR label PDF cache failed: $e\n$st');
+      if (mounted && gen == _pdfGen) {
+        setState(() => _pdfBuilding = false);
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -110,14 +174,16 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     _subtitleCtrl.text = (saved.isEmpty || legacyDefaults.contains(saved))
         ? defaultSubtitle
         : saved;
-    PrintService.preload();
     _linkCtrl.text = item.qrLink ?? '';
 
     if (mounted) setState(() => _loading = false);
+    // Build the print PDF now so the first tap is O(1).
+    unawaited(_rebuildPdfCache());
   }
 
   @override
   void dispose() {
+    _pdfDebounce?.cancel();
     _titleCtrl.removeListener(_onFieldsChanged);
     _subtitleCtrl.removeListener(_onFieldsChanged);
     _linkCtrl.removeListener(_onFieldsChanged);
@@ -162,23 +228,27 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   }
 
   Future<void> _print() async {
-    if (_busy) return; // no double taps while the PDF is prepared
+    if (_busy) return;
     setState(() => _busy = true);
     try {
-      await _persist();
+      // Never open the system sheet until bytes are ready — empty/slow
+      // onLayout is what produced blank pages on the first few taps.
+      if (!_pdfReady) {
+        _pdfDebounce?.cancel();
+        await _rebuildPdfCache();
+      }
+      final bytes = _pdfBytes;
       if (!mounted) return;
-      // Build PDF while busy, then clear BEFORE the system print sheet so a
-      // stuck/cancelled sheet can never leave Print + Share disabled.
-      final bytes = await PrintService.buildQrLabelPdf(
-        title: _labelTitle,
-        subtitle: _labelSubtitle,
-        qrData: _qrData,
-        companyName: ref.read(shopSettingsProvider).valueOrNull?.companyName,
-      );
-      if (!mounted) return;
+      if (bytes == null || bytes.isEmpty || !_pdfReady) {
+        throw StateError('Label PDF not ready');
+      }
+      // Capture before clearing busy — onLayout may be invoked more than once.
+      final ready = bytes;
       setState(() => _busy = false);
+      // Persist in the background; don't delay the print sheet.
+      unawaited(_persist());
       await Printing.layoutPdf(
-        onLayout: (_) async => bytes,
+        onLayout: (_) async => ready,
         name: 'QR-$_labelTitle',
         format: PdfPageFormat.a4,
         dynamicLayout: false,
@@ -397,7 +467,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
               Expanded(
                 child: AccentButton(
                   label: t('print_label'),
-                  icon: _busy
+                  icon: (_busy || (_pdfBuilding && !_pdfReady))
                       ? Icons.hourglass_top_rounded
                       : Icons.print_rounded,
                   onPressed: _busy ? null : _print,

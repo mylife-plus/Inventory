@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:inventory_app/app.dart';
+import 'package:inventory_app/core/print/print_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,6 +13,8 @@ Future<void> main() async {
   // Inter is bundled in assets/google_fonts/ (same files google_fonts would
   // download), so the app never fetches fonts over the network.
   GoogleFonts.config.allowRuntimeFetching = false;
+  // Warm Inter PDF fonts so the first QR label print is instant.
+  unawaited(PrintService.preload());
   LicenseRegistry.addLicense(() async* {
     final license = await rootBundle.loadString('assets/google_fonts/OFL.txt');
     yield LicenseEntryWithLineBreaks(const ['google_fonts'], license);

@@ -20,7 +20,6 @@ void main() {
     };
     addTearDown(() => debugPrint = old);
 
-    // Warm asset cache (SynchronousFuture path).
     await rootBundle.load('assets/google_fonts/Inter-Regular.ttf');
     await rootBundle.load('assets/google_fonts/Inter-Bold.ttf');
 
@@ -42,15 +41,33 @@ void main() {
     );
     expect(bytes.length, greaterThan(1000));
     expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
-    expect(
-      logs.any((l) => l.contains('Courier')),
-      isFalse,
-      reason: 'PDF must not fall back to Courier: $logs',
+    expect(logs.any((l) => l.contains('Courier')), isFalse);
+    expect(logs.any((l) => l.contains('PrintService fonts ready')), isTrue);
+  });
+
+  test('QR label PDF session cache hits for identical content', () async {
+    GoogleFonts.config.allowRuntimeFetching = false;
+    final a = await PrintService.buildQrLabelPdf(
+      title: 'Cache Me',
+      subtitle: '1,00 €',
+      qrData: 'cache-key-1',
+      companyName: 'Shop',
     );
-    expect(
-      logs.any((l) => l.contains('PrintService fonts ready')),
-      isTrue,
+    final b = await PrintService.buildQrLabelPdf(
+      title: 'Cache Me',
+      subtitle: '1,00 €',
+      qrData: 'cache-key-1',
+      companyName: 'Shop',
     );
+    expect(identical(a, b), isTrue);
+    final c = await PrintService.buildQrLabelPdf(
+      title: 'Cache Me',
+      subtitle: '2,00 €',
+      qrData: 'cache-key-1',
+      companyName: 'Shop',
+    );
+    expect(identical(c, a), isFalse);
+    expect(c, isNot(equals(a)));
   });
 
   testWidgets('sharePositionOrigin never returns an empty rect', (tester) async {
@@ -67,7 +84,6 @@ void main() {
     final origin = sharePositionOrigin(ctx);
     expect(origin.width, greaterThan(0));
     expect(origin.height, greaterThan(0));
-    // Fallback without a sized box still non-zero.
     final fallback = sharePositionOrigin();
     expect(fallback.width, greaterThan(0));
     expect(fallback.height, greaterThan(0));
