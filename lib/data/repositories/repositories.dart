@@ -324,12 +324,15 @@ class CustomerRepository {
   Future<CustomerStats> stats(String customerId) async {
     final db = await _db.database;
     final rows = await db.rawQuery('''
-      SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s
+      SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s,
+             MAX(created_at) AS l
       FROM sales WHERE customer_id = ?
     ''', [customerId]);
+    final last = rows.first['l'] as String?;
     return CustomerStats(
       purchaseCount: (rows.first['c'] as int?) ?? 0,
       totalSpent: (rows.first['s'] as num?)?.toDouble() ?? 0,
+      lastPurchaseAt: last == null ? null : DateTime.tryParse(last),
     );
   }
 }

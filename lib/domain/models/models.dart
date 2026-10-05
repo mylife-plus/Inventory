@@ -617,13 +617,15 @@ class CustomerStats extends Equatable {
   const CustomerStats({
     required this.purchaseCount,
     required this.totalSpent,
+    this.lastPurchaseAt,
   });
 
   final int purchaseCount;
   final double totalSpent;
+  final DateTime? lastPurchaseAt;
 
   @override
-  List<Object?> get props => [purchaseCount, totalSpent];
+  List<Object?> get props => [purchaseCount, totalSpent, lastPurchaseAt];
 }
 
 class SaleLine extends Equatable {

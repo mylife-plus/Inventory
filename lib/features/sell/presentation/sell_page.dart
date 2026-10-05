@@ -10,6 +10,7 @@ import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/features/inventory/presentation/item_list_tools.dart';
+import 'package:inventory_app/features/customers/presentation/customer_list_tools.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
@@ -1294,8 +1295,6 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
   }
 }
 
-enum _CustSort { name, recent }
-
 class SelectCustomerPage extends ConsumerStatefulWidget {
   const SelectCustomerPage({super.key, this.checkout = false, this.saleId});
 
@@ -1315,13 +1314,44 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
   bool _busy = false;
   bool _showSearch = false;
   final _search = TextEditingController();
-  String? _filter; // phone | email | null=all
-  _CustSort _sort = _CustSort.name;
+  SortState<CustomerSortKey> _sort = kDefaultCustomerSort;
+  CustomerFilter _filter = const CustomerFilter();
+  Map<String, CustomerStats> _stats = {};
+  String _statsKey = '';
 
   @override
   void dispose() {
     _search.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadStats(List<Customer> list) async {
+    final repo = ref.read(customerRepositoryProvider);
+    final next = <String, CustomerStats>{};
+    for (final c in list) {
+      next[c.id] = await repo.stats(c.id);
+    }
+    if (!mounted) return;
+    setState(() => _stats = next);
+  }
+
+  Future<void> _showSortSheet() async {
+    final picked = await showSortSheet<CustomerSortKey>(
+      context: context,
+      options: customerSortOptions(ref.read(tProvider)),
+      current: _sort,
+      defaultState: kDefaultCustomerSort,
+    );
+    if (picked != null && mounted) setState(() => _sort = picked);
+  }
+
+  Future<void> _showFilterSheet() async {
+    final picked = await showCustomerFilterSheet(
+      context,
+      t: ref.read(tProvider),
+      current: _filter,
+    );
+    if (picked != null && mounted) setState(() => _filter = picked);
   }
 
   Future<void> _onPick(Customer? customer) async {
@@ -1398,6 +1428,7 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     final t = ref.watch(tProvider);
@@ -1415,86 +1446,6 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
         title: Text(t('select_customer')),
         actions: [
           IconButton(
-            tooltip: t('search'),
-            onPressed: () => setState(() => _showSearch = !_showSearch),
-            icon: const Icon(Icons.search_rounded),
-          ),
-          IconButton(
-            tooltip: t('filter'),
-            onPressed: () async {
-              final picked = await showAppSheet<String?>(
-                context: context,
-                heightFactor: 0.4,
-                builder: (ctx) => SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppSheetHeader(title: t('filter')),
-                      AppRadioRow<String?>(
-                        label: t('all'),
-                        icon: Icons.people_outline_rounded,
-                        value: null,
-                        groupValue: _filter,
-                        onChanged: (v) => Navigator.pop(ctx, v),
-                      ),
-                      AppRadioRow<String?>(
-                        label: t('phone'),
-                        icon: Icons.phone_rounded,
-                        value: 'phone',
-                        groupValue: _filter,
-                        onChanged: (v) => Navigator.pop(ctx, v),
-                      ),
-                      AppRadioRow<String?>(
-                        label: t('email'),
-                        icon: Icons.email_outlined,
-                        value: 'email',
-                        groupValue: _filter,
-                        onChanged: (v) => Navigator.pop(ctx, v),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
-                ),
-              );
-              setState(() => _filter = picked);
-            },
-            icon: const Icon(Icons.filter_list_rounded),
-          ),
-          IconButton(
-            tooltip: t('sort'),
-            onPressed: () async {
-              final picked = await showAppSheet<_CustSort>(
-                context: context,
-                heightFactor: 0.36,
-                builder: (ctx) => SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppSheetHeader(title: t('sort')),
-                      AppRadioRow<_CustSort>(
-                        label: t('name'),
-                        icon: Icons.sort_by_alpha_rounded,
-                        value: _CustSort.name,
-                        groupValue: _sort,
-                        onChanged: (v) => Navigator.pop(ctx, v),
-                      ),
-                      AppRadioRow<_CustSort>(
-                        label: t('sort_newest'),
-                        icon: Icons.schedule_rounded,
-                        value: _CustSort.recent,
-                        groupValue: _sort,
-                        onChanged: (v) => Navigator.pop(ctx, v),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
-                ),
-              );
-              if (picked != null) setState(() => _sort = picked);
-            },
-            icon: const Icon(Icons.sort_rounded),
-          ),
-          IconButton(
             tooltip: t('new_customer'),
             onPressed: _busy ? null : () => context.push('/customers/new'),
             icon: Icon(Icons.add_rounded, size: 28, color: p.textSecondary),
@@ -1503,47 +1454,47 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
       ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: ListActionIconsRow(
+              onSort: _showSortSheet,
+              onFilter: _showFilterSheet,
+              onSearch: () => setState(() => _showSearch = !_showSearch),
+              sortActive: _sort != kDefaultCustomerSort,
+              filterActive: _filter.isActive,
+              searchActive: _showSearch || _search.text.trim().isNotEmpty,
+            ),
+          ),
           if (_showSearch)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: TextField(
-                controller: _search,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: t('search'),
-                  prefixIcon: const Icon(Icons.search_rounded),
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
+            AppSearchField(
+              controller: _search,
+              hintText: t('search'),
+              onChanged: (_) => setState(() {}),
+              onDismiss: () {
+                if (mounted) setState(() => _showSearch = false);
+              },
             ),
           Expanded(
             child: customers.when(
               loading: () => const AppLoader(),
               error: (e, _) => Center(child: Text('$e')),
               data: (list) {
-                var filtered = list.where((c) {
-                  if (_filter == 'phone') {
-                    return (c.phone?.trim().isNotEmpty ?? false);
-                  }
-                  if (_filter == 'email') {
-                    return (c.email?.trim().isNotEmpty ?? false);
-                  }
-                  return true;
-                }).where((c) {
-                  if (q.isEmpty) return true;
-                  return c.displayName.toLowerCase().contains(q) ||
-                      (c.phone?.contains(q) ?? false) ||
-                      (c.email?.toLowerCase().contains(q) ?? false);
-                }).toList();
-                if (_sort == _CustSort.name) {
-                  filtered.sort(
-                    (a, b) => a.displayName
-                        .toLowerCase()
-                        .compareTo(b.displayName.toLowerCase()),
-                  );
-                } else {
-                  filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                final key = list.map((c) => c.id).join(',');
+                if (key != _statsKey) {
+                  _statsKey = key;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _loadStats(list);
+                  });
                 }
+                final filtered = sortCustomers(
+                  list
+                      .where((c) =>
+                          _filter.matches(c, _stats[c.id]) &&
+                          customerMatchesQuery(c, q))
+                      .toList(),
+                  _sort,
+                  _stats,
+                );
 
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

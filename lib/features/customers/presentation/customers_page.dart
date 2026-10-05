@@ -7,12 +7,12 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
-import 'package:inventory_app/core/l10n/s.dart';
 import 'package:inventory_app/core/media/local_image_store.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
+import 'package:inventory_app/features/customers/presentation/customer_list_tools.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
@@ -20,10 +20,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/local_photo.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
-
-enum _CustSort { nameAsc, nameDesc, newest, oldest, mostSpent, leastSpent }
-
-enum _CustFilter { all, withPhone, withEmail, withWhatsApp }
 
 enum _SocialKind {
   whatsapp,
@@ -71,26 +67,6 @@ Widget _phoneFieldIcon({double size = 22}) {
   );
 }
 
-extension on _CustSort {
-  String labelOf(S t) => switch (this) {
-        _CustSort.nameAsc => t('sort_name_az'),
-        _CustSort.nameDesc => t('sort_name_za'),
-        _CustSort.newest => t('sort_newest'),
-        _CustSort.oldest => t('sort_oldest'),
-        _CustSort.mostSpent => t('sort_highest_spend'),
-        _CustSort.leastSpent => t('sort_lowest_spend'),
-      };
-
-  IconData get icon => switch (this) {
-        _CustSort.nameAsc => Icons.sort_by_alpha_rounded,
-        _CustSort.nameDesc => Icons.sort_by_alpha_rounded,
-        _CustSort.newest => Icons.schedule_rounded,
-        _CustSort.oldest => Icons.history_rounded,
-        _CustSort.mostSpent => Icons.payments_rounded,
-        _CustSort.leastSpent => Icons.money_off_rounded,
-      };
-}
-
 class CustomersPage extends ConsumerStatefulWidget {
   const CustomersPage({super.key});
 
@@ -101,9 +77,10 @@ class CustomersPage extends ConsumerStatefulWidget {
 class _CustomersPageState extends ConsumerState<CustomersPage> {
   final _search = TextEditingController();
   bool _showSearch = false;
-  _CustSort _sort = _CustSort.nameAsc;
-  _CustFilter _filter = _CustFilter.all;
+  SortState<CustomerSortKey> _sort = kDefaultCustomerSort;
+  CustomerFilter _filter = const CustomerFilter();
   Map<String, CustomerStats> _stats = {};
+  String _statsKey = '';
 
   @override
   void dispose() {
@@ -132,146 +109,22 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
   }
 
   Future<void> _showSortSheet() async {
-    final t = ref.read(tProvider);
-    final picked = await showAppSheet<_CustSort>(
+    final picked = await showSortSheet<CustomerSortKey>(
       context: context,
-      heightFactor: 0.55,
-      alignTop: true,
-      builder: (ctx) {
-        return SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppSheetHeader(title: t('sort')),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final s in _CustSort.values) ...[
-                      AppRadioRow<_CustSort>(
-                        label: s.labelOf(t),
-                        icon: s.icon,
-                        value: s,
-                        groupValue: _sort,
-                        onChanged: (v) => Navigator.pop(ctx, v),
-                      ),
-                      if (s != _CustSort.values.last) const SizedBox(height: 8),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      options: customerSortOptions(ref.read(tProvider)),
+      current: _sort,
+      defaultState: kDefaultCustomerSort,
     );
     if (picked != null && mounted) setState(() => _sort = picked);
   }
 
   Future<void> _showFilterSheet() async {
-    final t = ref.read(tProvider);
-    final picked = await showAppSheet<_CustFilter>(
-      context: context,
-      heightFactor: 0.42,
-      alignTop: true,
-      builder: (ctx) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppSheetHeader(title: t('filter')),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppRadioRow<_CustFilter>(
-                    label: t('all'),
-                    icon: Icons.people_outline_rounded,
-                    value: _CustFilter.all,
-                    groupValue: _filter,
-                    onChanged: (v) => Navigator.pop(ctx, v),
-                  ),
-                  const SizedBox(height: 8),
-                  AppRadioRow<_CustFilter>(
-                    label: t('phone'),
-                    icon: Icons.phone_rounded,
-                    value: _CustFilter.withPhone,
-                    groupValue: _filter,
-                    onChanged: (v) => Navigator.pop(ctx, v),
-                  ),
-                  const SizedBox(height: 8),
-                  AppRadioRow<_CustFilter>(
-                    label: t('email'),
-                    icon: Icons.email_outlined,
-                    value: _CustFilter.withEmail,
-                    groupValue: _filter,
-                    onChanged: (v) => Navigator.pop(ctx, v),
-                  ),
-                  const SizedBox(height: 8),
-                  AppRadioRow<_CustFilter>(
-                    label: t('whatsapp'),
-                    icon: Icons.chat_rounded,
-                    value: _CustFilter.withWhatsApp,
-                    groupValue: _filter,
-                    onChanged: (v) => Navigator.pop(ctx, v),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+    final picked = await showCustomerFilterSheet(
+      context,
+      t: ref.read(tProvider),
+      current: _filter,
     );
     if (picked != null && mounted) setState(() => _filter = picked);
-  }
-
-  bool _matchesFilter(Customer c) {
-    switch (_filter) {
-      case _CustFilter.all:
-        return true;
-      case _CustFilter.withPhone:
-        return c.phone != null && c.phone!.trim().isNotEmpty;
-      case _CustFilter.withEmail:
-        return c.email != null && c.email!.trim().isNotEmpty;
-      case _CustFilter.withWhatsApp:
-        return c.whatsapp != null && c.whatsapp!.trim().isNotEmpty;
-    }
-  }
-
-  List<Customer> _sorted(List<Customer> list) {
-    final out = [...list];
-    switch (_sort) {
-      case _CustSort.nameAsc:
-        out.sort(
-          (a, b) => a.displayName
-              .toLowerCase()
-              .compareTo(b.displayName.toLowerCase()),
-        );
-      case _CustSort.nameDesc:
-        out.sort(
-          (a, b) => b.displayName
-              .toLowerCase()
-              .compareTo(a.displayName.toLowerCase()),
-        );
-      case _CustSort.newest:
-        out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      case _CustSort.oldest:
-        out.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-      case _CustSort.mostSpent:
-        out.sort((a, b) {
-          final sa = _stats[a.id]?.totalSpent ?? 0;
-          final sb = _stats[b.id]?.totalSpent ?? 0;
-          return sb.compareTo(sa);
-        });
-      case _CustSort.leastSpent:
-        out.sort((a, b) {
-          final sa = _stats[a.id]?.totalSpent ?? 0;
-          final sb = _stats[b.id]?.totalSpent ?? 0;
-          return sa.compareTo(sb);
-        });
-    }
-    return out;
   }
 
   @override
@@ -283,6 +136,11 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
       symbol: settings?.currencySymbol ?? '€',
       decimalSeparator: settings?.decimalSeparator ?? ',',
     );
+    // Purchases / spend change after every sale or receipt edit.
+    ref.listen(salesProvider, (_, _) {
+      final list = ref.read(customersProvider).valueOrNull;
+      if (list != null) _loadStats(list);
+    });
 
     return Scaffold(
       body: GestureDetector(
@@ -297,9 +155,9 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
               onSearch: () => setState(() => _showSearch = !_showSearch),
               onFilter: _showFilterSheet,
               onMenu: _showSortSheet,
-              sortActive: _sort != _CustSort.nameAsc,
-              filterActive: _filter != _CustFilter.all,
-              searchActive: _showSearch,
+              sortActive: _sort != kDefaultCustomerSort,
+              filterActive: _filter.isActive,
+              searchActive: _showSearch || _search.text.trim().isNotEmpty,
               trailing: Pressable(
                 onTap: () => context.push('/customers/new'),
                 child: SizedBox(
@@ -314,81 +172,64 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
               ),
             ),
             if (_showSearch)
-              Padding(
+              AppSearchField(
+                controller: _search,
+                hintText: t('search'),
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: TextField(
-                  controller: _search,
-                  autofocus: true,
-                  onChanged: (_) => setState(() {}),
-                  onTapOutside: (_) => _dismissSearch(),
-                  decoration: InputDecoration(
-                    hintText: t('search'),
-                    prefixIcon: const Icon(Icons.search, size: 20),
-                    isDense: true,
-                  ),
-                ),
+                onChanged: (_) => setState(() {}),
+                onDismiss: () {
+                  if (mounted) setState(() => _showSearch = false);
+                },
               ),
             Expanded(
-              child: Listener(
-                behavior: HitTestBehavior.translucent,
-                onPointerDown: (_) {
-                  if (_showSearch) _dismissSearch();
-                },
-                child: customers.when(
-                  loading: () => const AppLoader(),
-                  error: (e, _) => Center(child: Text('$e')),
-                  data: (list) {
-                    // Keep stats warm for spend sort / cards.
-                    if (_stats.length != list.length) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _loadStats(list);
-                      });
-                    }
-                    final q = _search.text.trim().toLowerCase();
-                    final filtered = _sorted(
-                      list.where((c) {
-                        if (!_matchesFilter(c)) return false;
-                        if (q.isEmpty) return true;
-                        return c.name.toLowerCase().contains(q) ||
-                            (c.lastName?.toLowerCase().contains(q) ?? false) ||
-                            (c.shortName?.toLowerCase().contains(q) ?? false) ||
-                            c.displayName.toLowerCase().contains(q) ||
-                            (c.phone?.contains(q) ?? false) ||
-                            (c.email?.toLowerCase().contains(q) ?? false) ||
-                            (c.whatsapp?.contains(q) ?? false) ||
-                            (c.facebook?.toLowerCase().contains(q) ?? false) ||
-                            (c.instagram?.toLowerCase().contains(q) ?? false) ||
-                            (c.linkedin?.toLowerCase().contains(q) ?? false) ||
-                            (c.telegram?.toLowerCase().contains(q) ?? false);
-                      }).toList(),
+              child: customers.when(
+                loading: () => const AppLoader(),
+                error: (e, _) => Center(child: Text('$e')),
+                data: (list) {
+                  // Keep stats warm for sort / filter / cards.
+                  final key = list.map((c) => c.id).join(',');
+                  if (key != _statsKey) {
+                    _statsKey = key;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _loadStats(list);
+                    });
+                  }
+                  final q = _search.text.trim().toLowerCase();
+                  final filtered = sortCustomers(
+                    list
+                        .where((c) =>
+                            _filter.matches(c, _stats[c.id]) &&
+                            customerMatchesQuery(c, q))
+                        .toList(),
+                    _sort,
+                    _stats,
+                  );
+                  if (filtered.isEmpty) {
+                    return EmptyState(
+                      icon: Icons.people_outline,
+                      title: t('no_customers'),
+                      subtitle: t('add_first_customer'),
                     );
-                    if (filtered.isEmpty) {
-                      return EmptyState(
-                        icon: Icons.people_outline,
-                        title: t('no_customers'),
-                        subtitle: t('add_first_customer'),
-                      );
-                    }
-                    return ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) => FadeSlide(
-                        child: CustomerListCard(
-                          name: filtered[i].displayName,
-                          money: money,
-                          stats: _stats[filtered[i].id],
-                          photoPath: filtered[i].photoPath,
-                          contacts: filtered[i].allContacts,
-                          onTap: () =>
-                              context.push('/customers/${filtered[i].id}'),
-                        ),
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) => FadeSlide(
+                      child: CustomerListCard(
+                        name: filtered[i].displayName,
+                        money: money,
+                        stats: _stats[filtered[i].id],
+                        photoPath: filtered[i].photoPath,
+                        contacts: filtered[i].allContacts,
+                        onTap: () =>
+                            context.push('/customers/${filtered[i].id}'),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -808,8 +649,6 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                 decoration: InputDecoration(
                   labelText: entry.label,
                   hintText: t('field_value'),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   suffixIcon: IconButton(
                     tooltip: t('delete'),
                     icon: const Icon(Icons.close_rounded),
@@ -822,22 +661,18 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                 ),
                 textInputAction: TextInputAction.next,
                 textCapitalization: TextCapitalization.sentences,
-                textAlignVertical: TextAlignVertical.center,
               ),
               const SizedBox(height: 14),
             ],
-            Pressable(
+            // Same field style / height as "Add social" above.
+            TextFormField(
+              readOnly: true,
+              canRequestFocus: false,
+              enableInteractiveSelection: false,
               onTap: () => _showAddCustomFieldSheet(context, t, p),
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                ),
-                child: const SizedBox(
-                  width: double.infinity,
-                  height: 24,
-                  child: Icon(Icons.add_rounded, size: 26),
-                ),
+              decoration: InputDecoration(
+                hintText: t('add_field'),
+                suffixIcon: const Icon(Icons.add_rounded, size: 26),
               ),
             ),
             const SizedBox(height: 14),
@@ -999,11 +834,8 @@ class _AddCustomFieldSheetBodyState extends State<_AddCustomFieldSheetBody> {
               autofocus: true,
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.done,
-              textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
                 labelText: t('field_name'),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               ),
               onSubmitted: (_) => _submit(),
             ),
@@ -1117,7 +949,7 @@ class CustomerDetailPage extends ConsumerStatefulWidget {
 class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
   bool _showSearch = false;
   final _search = TextEditingController();
-  _CustPurchaseSort _sort = _CustPurchaseSort.mostRecent;
+  SortState<_PurchaseSortKey> _sort = _kDefaultPurchaseSort;
   DateTime? _from;
   DateTime? _to;
   Customer? _customer;
@@ -1381,41 +1213,24 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
 
   Future<void> _showSortSheet() async {
     final t = ref.read(tProvider);
-    final picked = await showAppSheet<_CustPurchaseSort>(
+    final picked = await showSortSheet<_PurchaseSortKey>(
       context: context,
-      heightFactor: 0.4,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppSheetHeader(title: t('sort')),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Column(
-                  children: [
-                    AppRadioRow<_CustPurchaseSort>(
-                      label: t('sort_most_recent'),
-                      icon: Icons.schedule_rounded,
-                      value: _CustPurchaseSort.mostRecent,
-                      groupValue: _sort,
-                      onChanged: (v) => Navigator.pop(ctx, v),
-                    ),
-                    const SizedBox(height: 8),
-                    AppRadioRow<_CustPurchaseSort>(
-                      label: t('sort_highest_amount'),
-                      icon: Icons.payments_rounded,
-                      value: _CustPurchaseSort.highestAmount,
-                      groupValue: _sort,
-                      onChanged: (v) => Navigator.pop(ctx, v),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      options: [
+        SortOption(
+          key: _PurchaseSortKey.recent,
+          icon: Icons.schedule_rounded,
+          label: t('sort_most_recent'),
+          reversedLabel: t('sort_oldest'),
+        ),
+        SortOption(
+          key: _PurchaseSortKey.amount,
+          icon: Icons.payments_rounded,
+          label: t('sort_highest_amount'),
+          reversedLabel: t('sort_lowest_amount'),
+        ),
+      ],
+      current: _sort,
+      defaultState: _kDefaultPurchaseSort,
     );
     if (picked != null && mounted) setState(() => _sort = picked);
   }
@@ -1424,119 +1239,54 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
     final t = ref.read(tProvider);
     var from = _from;
     var to = _to;
-    await showAppSheet<void>(
+    final applied = await showAppSheet<bool>(
       context: context,
-      heightFactor: 0.48,
-      builder: (ctx) {
-        final p = AppPalette.of(ctx);
-        return StatefulBuilder(
-          builder: (context, setModal) {
-            Future<void> pick(bool isFrom) async {
-              final initial = (isFrom ? from : to) ?? DateTime.now();
-              final d = await showDatePicker(
-                context: context,
-                initialDate: initial,
-                firstDate: DateTime(2000),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (d == null) return;
-              setModal(() {
-                if (isFrom) {
-                  from = d;
-                } else {
-                  to = d;
-                }
-              });
-            }
+      alignTop: true,
+      heightFactor: 0.5,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModal) {
+          Future<void> pick(bool isFrom) async {
+            final d = await pickFilterDate(context, isFrom ? from : to);
+            if (d == null) return;
+            setModal(() => isFrom ? from = d : to = d);
+          }
 
-            String label(DateTime? d, String placeholder) {
-              if (d == null) return placeholder;
-              return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
-            }
-
-            Widget field(String placeholder, DateTime? value, VoidCallback onTap) {
-              return Pressable(
-                onTap: onTap,
-                child: Container(
-                  height: 52,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: p.cardElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: p.stroke),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          label(value, placeholder),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color:
-                                value == null ? p.textMuted : p.textPrimary,
-                          ),
-                        ),
-                      ),
-                      Icon(Icons.arrow_drop_down_rounded,
-                          size: 22, color: p.textMuted),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            return Column(
+          return AppFilterSheet(
+            onReset: () {
+              from = null;
+              to = null;
+              Navigator.pop(ctx, true);
+            },
+            onApply: () => Navigator.pop(ctx, true),
+            child: Row(
               children: [
-                AppSheetHeader(title: t('filter')),
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: field(
-                              t('from_date'),
-                              from,
-                              () => pick(true),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: field(
-                              t('to_date'),
-                              to,
-                              () => pick(false),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  child: AppFilterDateField(
+                    placeholder: t('from_date'),
+                    value: from,
+                    onTap: () => pick(true),
                   ),
                 ),
-                AppSheetActions(
-                  onReset: () {
-                    Navigator.pop(ctx);
-                    setState(() {
-                      _from = null;
-                      _to = null;
-                    });
-                  },
-                  onApply: () {
-                    Navigator.pop(ctx);
-                    setState(() {
-                      _from = from;
-                      _to = to;
-                    });
-                  },
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AppFilterDateField(
+                    placeholder: t('to_date'),
+                    value: to,
+                    onTap: () => pick(false),
+                  ),
                 ),
               ],
-            );
-          },
-        );
-      },
+            ),
+          );
+        },
+      ),
     );
+    if (applied == true && mounted) {
+      setState(() {
+        _from = from;
+        _to = to;
+      });
+    }
   }
 
   @override
@@ -1778,9 +1528,9 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
             onSort: _showSortSheet,
             onFilter: _showFilterSheet,
             onSearch: () => setState(() => _showSearch = !_showSearch),
-            sortActive: _sort != _CustPurchaseSort.mostRecent,
+            sortActive: _sort != _kDefaultPurchaseSort,
             filterActive: _from != null || _to != null,
-            searchActive: _showSearch,
+            searchActive: _showSearch || _search.text.trim().isNotEmpty,
           ),
           if (_showSearch)
             Padding(
@@ -1791,7 +1541,9 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
                 onChanged: (_) => setState(() {}),
                 onTapOutside: (_) {
                   FocusManager.instance.primaryFocus?.unfocus();
-                  setState(() => _showSearch = false);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _showSearch = false);
+                  });
                 },
                 decoration: InputDecoration(
                   hintText: t('search_purchases'),
@@ -1947,7 +1699,9 @@ class _CustomFieldRow extends StatelessWidget {
   }
 }
 
-enum _CustPurchaseSort { mostRecent, highestAmount }
+enum _PurchaseSortKey { recent, amount }
+
+const _kDefaultPurchaseSort = SortState<_PurchaseSortKey>(_PurchaseSortKey.recent);
 
 class _CustomerPurchases extends ConsumerWidget {
   const _CustomerPurchases({
@@ -1961,7 +1715,7 @@ class _CustomerPurchases extends ConsumerWidget {
 
   final Future<List<Sale>> salesFuture;
   final MoneyFormatter money;
-  final _CustPurchaseSort sort;
+  final SortState<_PurchaseSortKey> sort;
   final String query;
   final DateTime? from;
   final DateTime? to;
@@ -2003,10 +1757,16 @@ class _CustomerPurchases extends ConsumerWidget {
           );
         }
 
-        if (sort == _CustPurchaseSort.highestAmount) {
-          sales.sort((a, b) => b.total.compareTo(a.total));
+        final oldestFirst =
+            sort.key == _PurchaseSortKey.recent && sort.reversed;
+        if (sort.key == _PurchaseSortKey.amount) {
+          sales.sort((a, b) => sort.reversed
+              ? a.total.compareTo(b.total)
+              : b.total.compareTo(a.total));
         } else {
-          sales.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          sales.sort((a, b) => oldestFirst
+              ? a.createdAt.compareTo(b.createdAt)
+              : b.createdAt.compareTo(a.createdAt));
         }
 
         final entries = <({Sale sale, SaleLine line})>[];
@@ -2033,7 +1793,8 @@ class _CustomerPurchases extends ConsumerWidget {
           final m = e.sale.createdAt.month;
           byYear.putIfAbsent(y, () => {}).putIfAbsent(m, () => []).add(e);
         }
-        final years = byYear.keys.toList()..sort((a, b) => b.compareTo(a));
+        final years = byYear.keys.toList()
+          ..sort((a, b) => oldestFirst ? a.compareTo(b) : b.compareTo(a));
         final widgets = <Widget>[];
         for (final year in years) {
           final months = byYear[year]!;
@@ -2053,7 +1814,8 @@ class _CustomerPurchases extends ConsumerWidget {
               ),
             ),
           );
-          final monthKeys = months.keys.toList()..sort((a, b) => b.compareTo(a));
+          final monthKeys = months.keys.toList()
+            ..sort((a, b) => oldestFirst ? a.compareTo(b) : b.compareTo(a));
           for (final month in monthKeys) {
             final list = months[month]!;
             final monthTotal =
