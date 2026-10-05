@@ -10,6 +10,7 @@ import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/export/csv_export.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
+import 'package:inventory_app/features/inventory/presentation/item_list_tools.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
@@ -19,7 +20,9 @@ import 'package:inventory_app/core/utils/app_haptics.dart';
 
 enum TurnoverPeriod { w2, m1, m3, m6, y1, y2, all }
 
-enum TurnoverSort { highestAmount, mostRecent }
+enum TurnoverSortKey { amount, recent }
+
+const _kDefaultTurnoverSort = SortState<TurnoverSortKey>(TurnoverSortKey.amount);
 
 class _TurnoverItemAgg {
   const _TurnoverItemAgg({
@@ -50,7 +53,7 @@ class TurnoverPage extends ConsumerStatefulWidget {
 
 class _TurnoverPageState extends ConsumerState<TurnoverPage> {
   TurnoverPeriod _period = TurnoverPeriod.m1;
-  TurnoverSort _sort = TurnoverSort.highestAmount;
+  SortState<TurnoverSortKey> _sort = _kDefaultTurnoverSort;
   DateTime? _customFrom;
   DateTime? _customTo;
   String? _categoryFilter;
@@ -130,12 +133,9 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
     List<Sale> sales,
     Map<String, InventoryItem> inventoryById,
   ) {
-    final sortedSales = [...sales]..sort((a, b) {
-        if (_sort == TurnoverSort.mostRecent) {
-          return b.createdAt.compareTo(a.createdAt);
-        }
-        return a.createdAt.compareTo(b.createdAt);
-      });
+    // Oldest → newest so the latest title / price wins.
+    final sortedSales = [...sales]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     final itemMap = <String, _TurnoverItemAgg>{};
     for (final sale in sortedSales) {
@@ -163,11 +163,11 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
     }
 
     final items = itemMap.values.toList();
-    if (_sort == TurnoverSort.mostRecent) {
-      items.sort((a, b) => b.lastSaleAt.compareTo(a.lastSaleAt));
-    } else {
-      items.sort((a, b) => b.revenue.compareTo(a.revenue));
-    }
+    int cmp(_TurnoverItemAgg a, _TurnoverItemAgg b) =>
+        _sort.key == TurnoverSortKey.recent
+            ? b.lastSaleAt.compareTo(a.lastSaleAt)
+            : b.revenue.compareTo(a.revenue);
+    items.sort((a, b) => _sort.reversed ? cmp(b, a) : cmp(a, b));
     return items;
   }
 
@@ -185,243 +185,106 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
 
   Future<void> _showSortSheet() async {
     final t = ref.read(tProvider);
-    final picked = await showAppSheet<TurnoverSort>(
+    final picked = await showSortSheet<TurnoverSortKey>(
       context: context,
-      heightFactor: 0.42,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppSheetHeader(title: t('sort')),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Column(
-                  children: [
-                    AppRadioRow<TurnoverSort>(
-                      label: t('sort_highest_amount'),
-                      icon: Icons.payments_rounded,
-                      value: TurnoverSort.highestAmount,
-                      groupValue: _sort,
-                      onChanged: (v) => Navigator.pop(ctx, v),
-                    ),
-                    const SizedBox(height: 8),
-                    AppRadioRow<TurnoverSort>(
-                      label: t('sort_most_recent'),
-                      icon: Icons.schedule_rounded,
-                      value: TurnoverSort.mostRecent,
-                      groupValue: _sort,
-                      onChanged: (v) => Navigator.pop(ctx, v),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      options: [
+        SortOption(
+          key: TurnoverSortKey.amount,
+          icon: Icons.payments_rounded,
+          label: t('sort_highest_amount'),
+          reversedLabel: t('sort_lowest_amount'),
+        ),
+        SortOption(
+          key: TurnoverSortKey.recent,
+          icon: Icons.schedule_rounded,
+          label: t('sort_most_recent'),
+          reversedLabel: t('sort_oldest'),
+        ),
+      ],
+      current: _sort,
+      defaultState: _kDefaultTurnoverSort,
     );
-    if (picked != null && picked != _sort) {
-      AppHaptics.selection();
+    if (picked != null && mounted && picked != _sort) {
       setState(() => _sort = picked);
     }
   }
 
   Future<void> _showFilterSheet() async {
-    final categories =
-        ref.read(categoriesProvider).valueOrNull ?? <Category>[];
+    final t = ref.read(tProvider);
+    // Only categories that still exist on inventory items.
+    final categories = usedCategories(
+      ref.read(categoriesProvider).valueOrNull ?? <Category>[],
+      ref.read(inventoryItemsProvider).valueOrNull ?? <InventoryItem>[],
+    );
     var from = _customFrom;
     var to = _customTo;
-    var category = _categoryFilter;
+    var category = categories.any((c) => c.id == _categoryFilter)
+        ? _categoryFilter
+        : null;
 
-    await showAppSheet<void>(
+    final applied = await showAppSheet<bool>(
       context: context,
-      heightFactor: 0.55,
-      builder: (ctx) {
-        final p = AppPalette.of(ctx);
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            Future<void> pickFrom() async {
-              final initial = from ?? DateTime.now();
-              final d = await showDatePicker(
-                context: context,
-                initialDate: initial,
-                firstDate: DateTime(2000),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (d != null) setModalState(() => from = d);
-            }
+      alignTop: true,
+      heightFactor: 0.6,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModal) {
+          Future<void> pick(bool isFrom) async {
+            final d = await pickFilterDate(context, isFrom ? from : to);
+            if (d == null) return;
+            setModal(() => isFrom ? from = d : to = d);
+          }
 
-            Future<void> pickTo() async {
-              final initial = to ?? DateTime.now();
-              final d = await showDatePicker(
-                context: context,
-                initialDate: initial,
-                firstDate: DateTime(2000),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (d != null) setModalState(() => to = d);
-            }
-
-            String fmt(DateTime? d, String placeholder) {
-              if (d == null) return placeholder;
-              return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
-            }
-
-            Widget dateField({
-              required String placeholder,
-              required DateTime? value,
-              required VoidCallback onTap,
-            }) {
-              return Pressable(
-                onTap: onTap,
-                child: Container(
-                  height: 52,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: p.cardElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: p.stroke),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          fmt(value, placeholder),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: value == null
-                                ? p.textMuted
-                                : p.textPrimary,
-                          ),
-                        ),
-                      ),
-                      Icon(Icons.arrow_drop_down_rounded,
-                          size: 22, color: p.textMuted),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            return Column(
+          return AppFilterSheet(
+            onReset: () {
+              from = null;
+              to = null;
+              category = null;
+              Navigator.pop(ctx, true);
+            },
+            onApply: () => Navigator.pop(ctx, true),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                AppSheetHeader(title: ref.read(tProvider)('filter')),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: dateField(
-                              placeholder: ref.read(tProvider)('from_date'),
-                              value: from,
-                              onTap: pickFrom,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: dateField(
-                              placeholder: ref.read(tProvider)('to_date'),
-                              value: to,
-                              onTap: pickTo,
-                            ),
-                          ),
-                        ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppFilterDateField(
+                        placeholder: t('from_date'),
+                        value: from,
+                        onTap: () => pick(true),
                       ),
-                      const SizedBox(height: 12),
-                      Container(
-                        height: 56,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: p.cardElevated,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: p.stroke),
-                        ),
-                        alignment: Alignment.center,
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String?>(
-                            isExpanded: true,
-                            value: category,
-                            hint: Text(
-                              ref.read(tProvider)('category'),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: p.textMuted,
-                              ),
-                            ),
-                            icon: const Icon(Icons.arrow_drop_down_rounded),
-                            dropdownColor: p.cardElevated,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: p.textPrimary,
-                            ),
-                            items: [
-                              DropdownMenuItem<String?>(
-                                value: null,
-                                child: Text(
-                                  ref.read(tProvider)('all_categories'),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: p.textPrimary,
-                                  ),
-                                ),
-                              ),
-                              ...categories.map(
-                                (c) => DropdownMenuItem<String?>(
-                                  value: c.id,
-                                  child: Text(
-                                    c.name,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      color: p.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            onChanged: (v) =>
-                                setModalState(() => category = v),
-                          ),
-                        ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: AppFilterDateField(
+                        placeholder: t('to_date'),
+                        value: to,
+                        onTap: () => pick(false),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                AppSheetActions(
-                  onReset: () {
-                    Navigator.pop(ctx);
-                    setState(() {
-                      _customFrom = null;
-                      _customTo = null;
-                      _categoryFilter = null;
-                      _slider = const RangeValues(0, 1);
-                    });
-                  },
-                  onApply: () {
-                    Navigator.pop(ctx);
-                    setState(() {
-                      _customFrom = from;
-                      _customTo = to;
-                      _categoryFilter = category;
-                    });
-                  },
+                const SizedBox(height: 12),
+                AppCategoryDropdown(
+                  categories: categories,
+                  value: category,
+                  onChanged: (v) => setModal(() => category = v),
                 ),
               ],
-            );
-          },
-        );
-      },
+            ),
+          );
+        },
+      ),
     );
+    if (applied == true && mounted) {
+      setState(() {
+        final cleared = from == null && to == null;
+        _customFrom = from;
+        _customTo = to;
+        _categoryFilter = category;
+        if (cleared) _slider = const RangeValues(0, 1);
+      });
+    }
   }
 
   @override
@@ -919,39 +782,28 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                             ),
                           ),
                         ],
-                        Row(
-                          children: [
-                            HeaderActionIcon(
-                              asset: AppAssets.sort,
-                              onTap: _showSortSheet,
-                            ),
-                            const SizedBox(width: 48),
-                            HeaderActionIcon(
-                              asset: AppAssets.filter,
-                              onTap: _showFilterSheet,
-                            ),
-                            const SizedBox(width: 48),
-                            HeaderActionIcon(
-                              asset: AppAssets.search,
-                              onTap: () =>
-                                  setState(() => _showSearch = !_showSearch),
-                            ),
-                          ],
+                        ListActionIconsRow(
+                          onSort: _showSortSheet,
+                          onFilter: _showFilterSheet,
+                          onSearch: () =>
+                              setState(() => _showSearch = !_showSearch),
+                          sortActive: _sort != _kDefaultTurnoverSort,
+                          filterActive:
+                              _usingCustomRange || _categoryFilter != null,
+                          searchActive: _showSearch ||
+                              _search.text.trim().isNotEmpty,
                         ),
                         if (_showSearch)
-                          Padding(
+                          AppSearchField(
+                            controller: _search,
+                            hintText: t('search_sold_items'),
                             padding: const EdgeInsets.only(bottom: 10),
-                            child: TextField(
-                              controller: _search,
-                              autofocus: true,
-                              onChanged: (_) => setState(() {}),
-                              decoration: InputDecoration(
-                                hintText: t('search_sold_items'),
-                                prefixIcon:
-                                    const Icon(Icons.search, size: 20),
-                                isDense: true,
-                              ),
-                            ),
+                            onChanged: (_) => setState(() {}),
+                            onDismiss: () {
+                              if (mounted) {
+                                setState(() => _showSearch = false);
+                              }
+                            },
                           ),
                         const SizedBox(height: 4),
                         ...soldSections(),

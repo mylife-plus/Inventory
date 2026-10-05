@@ -635,12 +635,14 @@ class ReceiptsYearsPage extends ConsumerStatefulWidget {
   ConsumerState<ReceiptsYearsPage> createState() => _ReceiptsYearsPageState();
 }
 
-enum _ReceiptYearSort { newest, oldest, mostReceipts }
+enum _ReceiptYearSortKey { year, receipts }
+
+const _kDefaultYearSort = SortState<_ReceiptYearSortKey>(_ReceiptYearSortKey.year);
 
 class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
   bool _showSearch = false;
   final _search = TextEditingController();
-  _ReceiptYearSort _sort = _ReceiptYearSort.newest;
+  SortState<_ReceiptYearSortKey> _sort = _kDefaultYearSort;
   DateTime? _from;
   DateTime? _to;
 
@@ -652,49 +654,24 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
 
   Future<void> _showSortSheet() async {
     final t = ref.read(tProvider);
-    final picked = await showAppSheet<_ReceiptYearSort>(
+    final picked = await showSortSheet<_ReceiptYearSortKey>(
       context: context,
-      heightFactor: 0.42,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppSheetHeader(title: t('sort')),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Column(
-                  children: [
-                    AppRadioRow<_ReceiptYearSort>(
-                      label: t('sort_newest'),
-                      icon: Icons.schedule_rounded,
-                      value: _ReceiptYearSort.newest,
-                      groupValue: _sort,
-                      onChanged: (v) => Navigator.pop(ctx, v),
-                    ),
-                    const SizedBox(height: 8),
-                    AppRadioRow<_ReceiptYearSort>(
-                      label: t('sort_oldest'),
-                      icon: Icons.history_rounded,
-                      value: _ReceiptYearSort.oldest,
-                      groupValue: _sort,
-                      onChanged: (v) => Navigator.pop(ctx, v),
-                    ),
-                    const SizedBox(height: 8),
-                    AppRadioRow<_ReceiptYearSort>(
-                      label: t('sort_most_receipts'),
-                      icon: Icons.receipt_long_rounded,
-                      value: _ReceiptYearSort.mostReceipts,
-                      groupValue: _sort,
-                      onChanged: (v) => Navigator.pop(ctx, v),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      options: [
+        SortOption(
+          key: _ReceiptYearSortKey.year,
+          icon: Icons.schedule_rounded,
+          label: t('sort_newest'),
+          reversedLabel: t('sort_oldest'),
+        ),
+        SortOption(
+          key: _ReceiptYearSortKey.receipts,
+          icon: Icons.receipt_long_rounded,
+          label: t('sort_most_receipts'),
+          reversedLabel: t('sort_fewest_receipts'),
+        ),
+      ],
+      current: _sort,
+      defaultState: _kDefaultYearSort,
     );
     if (picked != null && mounted) setState(() => _sort = picked);
   }
@@ -705,108 +682,45 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
     var to = _to;
     final applied = await showAppSheet<bool>(
       context: context,
-      heightFactor: 0.48,
-      builder: (ctx) {
-        final p = AppPalette.of(ctx);
-        return StatefulBuilder(
-          builder: (ctx, setModal) {
-            Future<void> pickFrom() async {
-              final d = await showDatePicker(
-                context: ctx,
-                initialDate: from ?? DateTime.now(),
-                firstDate: DateTime(2000),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (d != null) setModal(() => from = d);
-            }
+      alignTop: true,
+      heightFactor: 0.5,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModal) {
+          Future<void> pick(bool isFrom) async {
+            final d = await pickFilterDate(context, isFrom ? from : to);
+            if (d == null) return;
+            setModal(() => isFrom ? from = d : to = d);
+          }
 
-            Future<void> pickTo() async {
-              final d = await showDatePicker(
-                context: ctx,
-                initialDate: to ?? DateTime.now(),
-                firstDate: DateTime(2000),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (d != null) setModal(() => to = d);
-            }
-
-            String fmt(DateTime? v, String placeholder) {
-              if (v == null) return placeholder;
-              return '${v.day.toString().padLeft(2, '0')}.'
-                  '${v.month.toString().padLeft(2, '0')}.'
-                  '${v.year}';
-            }
-
-            Widget dateField({
-              required DateTime? value,
-              required String placeholder,
-              required VoidCallback onTap,
-            }) {
-              return Pressable(
-                onTap: onTap,
-                child: Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: p.cardElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: p.stroke),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          fmt(value, placeholder),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color:
-                                value == null ? p.textMuted : p.textPrimary,
-                          ),
-                        ),
-                      ),
-                      Icon(Icons.arrow_drop_down_rounded,
-                          size: 22, color: p.textMuted),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            return Column(
+          return AppFilterSheet(
+            onReset: () {
+              from = null;
+              to = null;
+              Navigator.pop(ctx, true);
+            },
+            onApply: () => Navigator.pop(ctx, true),
+            child: Row(
               children: [
-                AppSheetHeader(title: t('filter')),
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                    children: [
-                      dateField(
-                        value: from,
-                        placeholder: t('from_date'),
-                        onTap: pickFrom,
-                      ),
-                      const SizedBox(height: 12),
-                      dateField(
-                        value: to,
-                        placeholder: t('to_date'),
-                        onTap: pickTo,
-                      ),
-                    ],
+                  child: AppFilterDateField(
+                    placeholder: t('from_date'),
+                    value: from,
+                    onTap: () => pick(true),
                   ),
                 ),
-                AppSheetActions(
-                  onReset: () => setModal(() {
-                    from = null;
-                    to = null;
-                  }),
-                  onApply: () => Navigator.pop(ctx, true),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AppFilterDateField(
+                    placeholder: t('to_date'),
+                    value: to,
+                    onTap: () => pick(false),
+                  ),
                 ),
               ],
-            );
-          },
-        );
-      },
+            ),
+          );
+        },
+      ),
     );
     if (applied == true && mounted) {
       setState(() {
@@ -859,14 +773,15 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
           )
           .toList();
     }
-    switch (_sort) {
-      case _ReceiptYearSort.newest:
-        entries.sort((a, b) => b.key.compareTo(a.key));
-      case _ReceiptYearSort.oldest:
-        entries.sort((a, b) => a.key.compareTo(b.key));
-      case _ReceiptYearSort.mostReceipts:
-        entries.sort((a, b) => b.value.length.compareTo(a.value.length));
+    int cmp(MapEntry<int, List<Sale>> a, MapEntry<int, List<Sale>> b) {
+      if (_sort.key == _ReceiptYearSortKey.receipts) {
+        final c = b.value.length.compareTo(a.value.length);
+        if (c != 0) return c;
+      }
+      return b.key.compareTo(a.key);
     }
+
+    entries.sort((a, b) => _sort.reversed ? cmp(b, a) : cmp(a, b));
     return entries;
   }
 
@@ -924,21 +839,21 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
                   onSort: _showSortSheet,
                   onFilter: _showFilterSheet,
                   onSearch: () => setState(() => _showSearch = !_showSearch),
+                  sortActive: _sort != _kDefaultYearSort,
+                  filterActive: _from != null || _to != null,
+                  searchActive:
+                      _showSearch || _search.text.trim().isNotEmpty,
                 ),
               ),
               if (_showSearch)
-                Padding(
+                AppSearchField(
+                  controller: _search,
+                  hintText: t('search'),
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: TextField(
-                    controller: _search,
-                    autofocus: true,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: t('search'),
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      isDense: true,
-                    ),
-                  ),
+                  onChanged: (_) => setState(() {}),
+                  onDismiss: () {
+                    if (mounted) setState(() => _showSearch = false);
+                  },
                 ),
               Expanded(
                 child: years.isEmpty
