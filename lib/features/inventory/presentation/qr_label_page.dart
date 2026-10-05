@@ -15,8 +15,6 @@ import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:pdf/pdf.dart';
-import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// Default label subtitle: "price per unit", or just the price without a unit.
@@ -52,6 +50,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   /// Pre-built label PDF — Print only opens the sheet when this matches
   /// [_pdfCacheKey] so iOS never gets an empty/slow onLayout rebuild.
   Uint8List? _pdfBytes;
+  Uint8List? _pdfPreviewPng;
   String? _pdfCacheKey;
   Timer? _pdfDebounce;
   int _pdfGen = 0;
@@ -116,15 +115,23 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
         companyName: _companyName,
       );
       if (!mounted || gen != _pdfGen) return;
+      final preview = await PrintService.rasterQrLabelPreview(bytes);
+      if (!mounted || gen != _pdfGen) return;
       setState(() {
         _pdfBytes = bytes;
+        _pdfPreviewPng = preview;
         _pdfCacheKey = key;
         _pdfBuilding = false;
       });
     } catch (e, st) {
       debugPrint('QR label PDF cache failed: $e\n$st');
       if (mounted && gen == _pdfGen) {
-        setState(() => _pdfBuilding = false);
+        setState(() {
+          _pdfBuilding = false;
+          _pdfBytes = null;
+          _pdfPreviewPng = null;
+          _pdfCacheKey = null;
+        });
       }
     }
   }
@@ -242,16 +249,17 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
       if (bytes == null || bytes.isEmpty || !_pdfReady) {
         throw StateError('Label PDF not ready');
       }
-      // Capture before clearing busy — onLayout may be invoked more than once.
       final ready = bytes;
       setState(() => _busy = false);
       // Persist in the background; don't delay the print sheet.
       unawaited(_persist());
-      await Printing.layoutPdf(
-        onLayout: (_) async => ready,
-        name: 'QR-$_labelTitle',
-        format: PdfPageFormat.a4,
-        dynamicLayout: false,
+      await PrintService.layoutQrLabelPdf(
+        bytes: ready,
+        title: _labelTitle,
+        subtitle: _labelSubtitle,
+        qrData: _qrData,
+        companyName: _companyName,
+        format: PrintService.qrLabelFormat,
       );
     } catch (e, st) {
       debugPrint('Print label failed: $e\n$st');
@@ -432,6 +440,39 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
               ),
             ),
           ),
+          if (_pdfPreviewPng != null) ...[
+            const SizedBox(height: 10),
+            FadeSlide(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: p.stroke),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Print preview',
+                      style: TextStyle(
+                        color: p.textSecondary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Image.memory(
+                      _pdfPreviewPng!,
+                      fit: BoxFit.contain,
+                      height: 220,
+                      filterQuality: FilterQuality.medium,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           TextField(
             controller: _titleCtrl,

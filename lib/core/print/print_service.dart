@@ -19,6 +19,16 @@ class PrintService {
   static String? _labelPdfKey;
   static Uint8List? _labelPdfBytes;
 
+  /// Compact sticker size so the QR fills the iOS print preview.
+  /// (A4 left a tiny blob on a huge white page that looked "empty".)
+  static final PdfPageFormat qrLabelFormat = PdfPageFormat(
+    70 * PdfPageFormat.mm,
+    100 * PdfPageFormat.mm,
+    marginAll: 5 * PdfPageFormat.mm,
+  );
+
+  static const int _minPdfBytes = 800;
+
   /// Bundled Inter TTFs — same family as the UI. Loaded via rootBundle only
   /// (never PdfGoogleFonts / network). Sequential loads avoid a Dart 3.10
   /// Future.wait + SynchronousFuture bug that returned an empty list.
@@ -93,25 +103,64 @@ class PrintService {
     /// Exact QR content (see `QrPayload.labelData`) — same as the preview.
     required String qrData,
     String? companyName,
-    PdfPageFormat format = PdfPageFormat.a4,
+    PdfPageFormat? format,
   }) async {
-    // Build the PDF once up front (not inside onLayout) so the system print
-    // sheet opens immediately and onLayout can never stall it.
+    final pageFormat = format ?? qrLabelFormat;
     final bytes = await buildQrLabelPdf(
       title: title,
       subtitle: subtitle,
       qrData: qrData,
       companyName: companyName,
-      format: format,
+      format: pageFormat,
     );
+    await layoutQrLabelPdf(
+      bytes: bytes,
+      title: title,
+      subtitle: subtitle,
+      qrData: qrData,
+      companyName: companyName,
+      format: pageFormat,
+    );
+  }
 
-    // System print UI (printers list + Cancel) — Cancel returns to the app.
+  /// Opens the system print sheet with [bytes] built for [format].
+  /// If iOS requests a different paper size, rebuilds for that size so the
+  /// preview is never an empty mismatched page.
+  static Future<void> layoutQrLabelPdf({
+    required Uint8List bytes,
+    required String title,
+    required String subtitle,
+    required String qrData,
+    String? companyName,
+    PdfPageFormat? format,
+  }) async {
+    final pageFormat = format ?? qrLabelFormat;
+    if (bytes.length < _minPdfBytes) {
+      throw StateError('QR label PDF too small (${bytes.length} bytes)');
+    }
     await Printing.layoutPdf(
-      onLayout: (_) async => bytes,
+      onLayout: (requested) async {
+        // Same size → return prepared bytes (fast path).
+        if (_samePageSize(requested, pageFormat)) return bytes;
+        // Printer/user changed paper → rebuild so iOS does not show a blank page.
+        return buildQrLabelPdf(
+          title: title,
+          subtitle: subtitle,
+          qrData: qrData,
+          companyName: companyName,
+          format: requested,
+        );
+      },
       name: 'QR-$title',
-      format: PdfPageFormat.a4,
+      format: pageFormat,
       dynamicLayout: false,
+      forceCustomPrintPaper: true,
     );
+  }
+
+  static bool _samePageSize(PdfPageFormat a, PdfPageFormat b) {
+    return (a.width - b.width).abs() < 0.5 &&
+        (a.height - b.height).abs() < 0.5;
   }
 
   /// QR label PDF bytes (used for printing and sharing; testable offline).
@@ -121,8 +170,9 @@ class PrintService {
     required String subtitle,
     required String qrData,
     String? companyName,
-    PdfPageFormat format = PdfPageFormat.a4,
+    PdfPageFormat? format,
   }) async {
+    format ??= qrLabelFormat;
     final company = companyName?.trim() ?? '';
     final key = '$title\x1f$subtitle\x1f$qrData\x1f$company\x1f${format.width}x${format.height}';
     final hit = _labelPdfBytes;
@@ -133,14 +183,15 @@ class PrintService {
       doc: pw.Document(),
       fonts: fonts,
       format: format,
-      qrSize: format.width < 200 ? 110.0 : 160.0,
+      qrSize: 52 * PdfPageFormat.mm,
       company: company,
       title: title,
       subtitle: subtitle,
       qrData: qrData,
     );
-    if (bytes.isEmpty) {
-      throw StateError('QR label PDF built empty (${bytes.length} bytes)');
+    if (bytes.length < _minPdfBytes) {
+      // Never cache a failed/empty build — that caused blank sheets forever.
+      throw StateError('QR label PDF too small (${bytes.length} bytes)');
     }
     _labelPdfKey = key;
     _labelPdfBytes = bytes;
@@ -149,6 +200,18 @@ class PrintService {
 
   /// True when fonts are already decoded (first print after cold start is slow otherwise).
   static bool get fontsReady => _fontCache != null;
+
+  /// Rasterize page 0 to PNG for an on-screen proof the PDF is not empty.
+  static Future<Uint8List?> rasterQrLabelPreview(Uint8List pdfBytes) async {
+    if (pdfBytes.length < _minPdfBytes) return null;
+    try {
+      final page = await Printing.raster(pdfBytes, pages: [0], dpi: 140).first;
+      return page.toPng();
+    } catch (e, st) {
+      debugPrint('QR label raster failed: $e\n$st');
+      return null;
+    }
+  }
 
   static Future<Uint8List> _buildQrDoc({
     required pw.Document doc,
@@ -160,11 +223,20 @@ class PrintService {
     required String subtitle,
     required String qrData,
   }) async {
+    // Finite page size only — infinity (roll*) breaks some iOS print previews.
+    final pageFormat = (format.width.isFinite && format.height.isFinite)
+        ? format
+        : qrLabelFormat;
+    final safeTitle = title.trim().isEmpty ? '—' : title.trim();
+    final safeQr = qrData.trim().isEmpty ? 'empty' : qrData;
+    // Fill most of the sticker; keep room for text under the QR.
+    final maxQr = (pageFormat.width - 24).clamp(80.0, 220.0);
+    final fittedQr = qrSize.clamp(80.0, maxQr);
 
     doc.addPage(
       pw.Page(
-        pageFormat: format,
-        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+        pageFormat: pageFormat,
+        margin: const pw.EdgeInsets.all(10),
         theme: pw.ThemeData.withFont(
           base: fonts.regular,
           bold: fonts.bold,
@@ -173,44 +245,44 @@ class PrintService {
           icons: fonts.regular,
         ),
         build: (context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              if (company.isNotEmpty) ...[
-                pw.Text(
-                  company,
-                  textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(
-                    font: fonts.bold,
-                    fontSize: 11,
+          return pw.Center(
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                if (company.trim().isNotEmpty) ...[
+                  pw.Text(
+                    company.trim(),
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(font: fonts.bold, fontSize: 10),
                   ),
+                  pw.SizedBox(height: 6),
+                ],
+                pw.BarcodeWidget(
+                  barcode: pw.Barcode.qrCode(),
+                  data: safeQr,
+                  width: fittedQr,
+                  height: fittedQr,
+                  drawText: false,
+                  color: PdfColors.black,
+                  backgroundColor: PdfColors.white,
                 ),
-                pw.SizedBox(height: 10),
-              ],
-              pw.BarcodeWidget(
-                barcode: pw.Barcode.qrCode(),
-                data: qrData,
-                width: qrSize,
-                height: qrSize,
-                drawText: false,
-              ),
-              pw.SizedBox(height: 12),
-              pw.Text(
-                title,
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                  font: fonts.bold,
-                  fontSize: 14,
-                ),
-              ),
-              pw.SizedBox(height: 4),
-              if (subtitle.isNotEmpty)
+                pw.SizedBox(height: 8),
                 pw.Text(
-                  subtitle,
+                  safeTitle,
                   textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(font: fonts.regular, fontSize: 12),
+                  style: pw.TextStyle(font: fonts.bold, fontSize: 12),
                 ),
-            ],
+                if (subtitle.trim().isNotEmpty) ...[
+                  pw.SizedBox(height: 3),
+                  pw.Text(
+                    subtitle.trim(),
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(font: fonts.regular, fontSize: 10),
+                  ),
+                ],
+              ],
+            ),
           );
         },
       ),
