@@ -27,6 +27,49 @@ class QrPayload {
 
   static String encodeItemUrl(String id) => '$itemHostPath$id';
 
+  /// Adds `https://` when the user typed a bare domain.
+  static String normalizeLink(String link) {
+    final l = link.trim();
+    if (l.isEmpty) return l;
+    final lower = l.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://')) return l;
+    return 'https://$l';
+  }
+
+  /// What a product label's QR encodes.
+  ///
+  /// Without a link: the JSON item payload. With a link: the link plus the
+  /// item id in the URL fragment (`#inv=<id>`). Phone cameras still open the
+  /// link (browsers never send the fragment to the server) and the in-app
+  /// scanner can still recognise the item.
+  static String labelData({
+    required String itemId,
+    required String payload,
+    String? link,
+  }) {
+    final l = link?.trim() ?? '';
+    if (l.isEmpty) return payload;
+    final url = normalizeLink(l);
+    final hash = url.indexOf('#');
+    if (hash < 0) return '$url#inv=$itemId';
+    final fragment = url.substring(hash + 1);
+    return fragment.isEmpty ? '${url}inv=$itemId' : '$url&inv=$itemId';
+  }
+
+  /// Comparable form of a link (scheme/`www.`/trailing slash/fragment
+  /// stripped) — used to match old labels that only encoded the link.
+  static String linkKey(String link) {
+    var s = link.trim().toLowerCase();
+    final hash = s.indexOf('#');
+    if (hash >= 0) s = s.substring(0, hash);
+    s = s.replaceFirst(RegExp(r'^https?://'), '');
+    if (s.startsWith('www.')) s = s.substring(4);
+    while (s.endsWith('/')) {
+      s = s.substring(0, s.length - 1);
+    }
+    return s;
+  }
+
   static String encodeReceipt(String saleId) => '$receiptHostPath$saleId';
 
   /// Normalize inventory / UUID ids from noisy scanner output.
@@ -104,8 +147,23 @@ class QrPayload {
       }
     }
 
-    // Tocca / URL style
+    // Label link with the item id in the fragment / query (`#inv=<id>`).
     final uri = Uri.tryParse(text);
+    if (uri != null) {
+      String? invId;
+      if (uri.fragment.isNotEmpty) {
+        try {
+          invId = Uri.splitQueryString(uri.fragment)['inv'];
+        } catch (_) {
+          // malformed fragment
+        }
+      }
+      invId ??= uri.queryParameters['inv'];
+      final id = normalizeId(invId);
+      if (id != null) return ParsedQr.item(id: id, raw: text);
+    }
+
+    // Tocca / URL style
     if (uri != null &&
         (uri.hasScheme || text.contains('/')) &&
         uri.pathSegments.isNotEmpty) {

@@ -14,6 +14,18 @@ import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+/// Default label subtitle: "price per unit", or just the price without a unit.
+String defaultQrSubtitleFor({
+  required double price,
+  required String? unit,
+  required MoneyFormatter money,
+  required String perWord,
+}) {
+  final priceText = money.format(price);
+  final u = unit?.trim() ?? '';
+  return u.isEmpty ? priceText : '$priceText $perWord $u';
+}
+
 class QrLabelPage extends ConsumerStatefulWidget {
   const QrLabelPage({super.key, required this.itemId});
 
@@ -28,6 +40,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   bool _busy = false;
   InventoryItem? _item;
   String? _payload;
+  String _defaultSubtitle = '';
 
   late final TextEditingController _titleCtrl;
   late final TextEditingController _subtitleCtrl;
@@ -70,20 +83,31 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
       unit: item.unit,
     );
 
-    final defaultSubtitle = () {
-      final price = money.format(item.price);
-      if (item.unit == null || item.unit!.isEmpty) return price;
-      return '$price / ${item.unit}';
-    }();
+    final defaultSubtitle = defaultQrSubtitleFor(
+      price: item.price,
+      unit: item.unit,
+      money: money,
+      perWord: ref.read(tProvider)('per'),
+    );
+    _defaultSubtitle = defaultSubtitle;
+    final legacyDefaults = {
+      item.defaultQrSubtitle,
+      money.format(item.price),
+      if ((item.unit ?? '').isNotEmpty)
+        '${money.format(item.price)} / ${item.unit}',
+    };
 
     _titleCtrl.text =
         (item.qrTitle != null && item.qrTitle!.trim().isNotEmpty)
             ? item.qrTitle!
             : item.title;
-    _subtitleCtrl.text =
-        (item.qrSubtitle != null && item.qrSubtitle!.trim().isNotEmpty)
-            ? item.qrSubtitle!
-            : defaultSubtitle;
+    // Saved subtitles that were just an old auto default get the current
+    // default (so a price change shows on the label).
+    final saved = item.qrSubtitle?.trim() ?? '';
+    _subtitleCtrl.text = (saved.isEmpty || legacyDefaults.contains(saved))
+        ? defaultSubtitle
+        : saved;
+    PrintService.preload();
     _linkCtrl.text = item.qrLink ?? '';
 
     if (mounted) setState(() => _loading = false);
@@ -112,22 +136,21 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     return v.isEmpty ? null : v;
   }
 
-  /// QR encodes the link when set (phone camera opens URL); else item payload.
-  String get _qrData {
-    final link = _labelLink;
-    if (link != null) {
-      if (link.startsWith('http://') || link.startsWith('https://')) return link;
-      return 'https://$link';
-    }
-    return _payload ?? '';
-  }
+  /// With a link: link + `#inv=<id>` (phone camera opens the URL, the
+  /// in-app scanner still finds the item). Without: the JSON item payload.
+  String get _qrData => QrPayload.labelData(
+        itemId: widget.itemId,
+        payload: _payload ?? '',
+        link: _labelLink,
+      );
 
   Future<void> _persist() async {
     final item = _item;
     if (item == null) return;
+    // Empty = "use the default", so defaults follow later title/price edits.
     final updated = item.copyWith(
-      qrTitle: _labelTitle,
-      qrSubtitle: _labelSubtitle,
+      qrTitle: _labelTitle == item.title ? '' : _labelTitle,
+      qrSubtitle: _labelSubtitle == _defaultSubtitle ? '' : _labelSubtitle,
       qrLink: _linkCtrl.text.trim(),
       updatedAt: DateTime.now(),
     );
@@ -136,30 +159,16 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   }
 
   Future<void> _print() async {
-    if (_payload == null && _labelLink == null) return;
-    // Persist first with busy flag, then clear before system print UI so
-    // Cancel / back always work even if the print dialog hangs.
+    if (_busy) return; // no double taps while the PDF is prepared
     setState(() => _busy = true);
     try {
       await _persist();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${ref.read(tProvider)('print_failed')}: $e')),
-        );
-      }
-      return;
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-    if (!mounted) return;
-    try {
+      if (!mounted) return;
       await PrintService.printQrLabel(
         title: _labelTitle,
         subtitle: _labelSubtitle,
-        payload: _qrData,
+        qrData: _qrData,
         companyName: ref.read(shopSettingsProvider).valueOrNull?.companyName,
-        link: _labelLink,
       );
     } catch (e) {
       if (mounted) {
@@ -168,7 +177,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
         );
       }
     } finally {
-      // Ensure we regain control after the system print sheet closes/fails.
+      // Always regain control after the system print sheet closes / fails.
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -201,7 +210,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   }
 
   Future<void> _done() async {
-    if (_busy) return;
+    // Back always works, even while a print job is still open.
     setState(() => _busy = true);
     try {
       await _persist();
@@ -346,8 +355,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
             decoration: InputDecoration(
               labelText: t('link'),
               hintText: 'https://…',
-              helperText:
-                  'Opens when the QR is scanned — not shown on the label',
+              helperText: t('qr_link_helper'),
             ),
             keyboardType: TextInputType.url,
             textInputAction: TextInputAction.done,
@@ -359,8 +367,10 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
             children: [
               Expanded(
                 child: AccentButton(
-                  label: _busy ? '…' : t('print_label'),
-                  icon: Icons.print_rounded,
+                  label: t('print_label'),
+                  icon: _busy
+                      ? Icons.hourglass_top_rounded
+                      : Icons.print_rounded,
                   onPressed: _busy ? null : _print,
                 ),
               ),

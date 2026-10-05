@@ -170,9 +170,32 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
     final price = double.parse(_price.text.replaceAll(',', '.'));
     final title = _title.text.trim();
     final unit = _unit.text.trim().isEmpty ? null : _unit.text.trim();
-    final priceText = money.format(price);
-    final defaultQrSubtitle =
-        (unit == null || unit.isEmpty) ? priceText : '$priceText / $unit';
+    // QR label fields may have been edited on the label screen meanwhile —
+    // use the latest saved values. Auto-generated defaults are stored as ''
+    // so the label always shows the current title / "price per unit".
+    final latest = _existingId == null
+        ? null
+        : await ref.read(inventoryRepositoryProvider).getItem(_existingId!);
+    final per = ref.read(tProvider)('per');
+    String keepCustom(String? saved, Set<String> defaults) {
+      final v = saved?.trim() ?? '';
+      return (v.isEmpty || defaults.contains(v)) ? '' : v;
+    }
+
+    final subtitleDefaults = <String>{
+      for (final it in [?latest]) ...{
+        it.defaultQrSubtitle,
+        money.format(it.price),
+        if ((it.unit ?? '').isNotEmpty) ...{
+          '${money.format(it.price)} / ${it.unit}',
+          '${money.format(it.price)} $per ${it.unit}',
+        },
+      },
+    };
+    final qrTitle =
+        keepCustom(latest?.qrTitle ?? _qrTitle, {title, ?latest?.title});
+    final qrSubtitle =
+        keepCustom(latest?.qrSubtitle ?? _qrSubtitle, subtitleDefaults);
 
     final item = InventoryItem(
       id: id,
@@ -187,11 +210,9 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
       alertEnabled: _alertEnabled,
       alertAmount:
           double.tryParse(_alertAmount.text.replaceAll(',', '.')) ?? 0,
-      qrTitle: (_qrTitle == null || _qrTitle!.isEmpty) ? title : _qrTitle,
-      qrSubtitle: (_qrSubtitle == null || _qrSubtitle!.isEmpty)
-          ? defaultQrSubtitle
-          : _qrSubtitle,
-      qrLink: _qrLink,
+      qrTitle: qrTitle,
+      qrSubtitle: qrSubtitle,
+      qrLink: latest?.qrLink ?? _qrLink,
       createdAt: _createdAt ?? now,
       updatedAt: now,
     );
@@ -487,8 +508,12 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     title: Text(
-                      t('notify_below_level'),
+                      t('quantity_alert'),
                       style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      t('notify_below_level'),
+                      style: TextStyle(fontSize: 12.5, color: p.textMuted),
                     ),
                     value: _alertEnabled,
                     onChanged: (v) => setState(() => _alertEnabled = v),
@@ -499,7 +524,7 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
                     TextFormField(
                       controller: _alertAmount,
                       decoration: InputDecoration(
-                        labelText: t('quantity_alert'),
+                        labelText: t('amount'),
                       ),
                       keyboardType: const TextInputType.numberWithOptions(
                           decimal: true),

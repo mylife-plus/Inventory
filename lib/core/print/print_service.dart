@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
@@ -11,10 +14,31 @@ import 'package:inventory_app/shared/widgets/app_sheets.dart';
 /// Thermal-friendly PDF print (58mm / 80mm) for QR labels & receipts.
 /// Uses Noto Sans so € / Unicode currency symbols render correctly.
 class PrintService {
+  static ({pw.Font regular, pw.Font bold})? _fontCache;
+
+  /// Bundled Noto Sans (assets/fonts). Previously fetched from Google Fonts
+  /// over the network on every print — slow, and it never finished offline,
+  /// which made "Print label" appear to hang.
   static Future<({pw.Font regular, pw.Font bold})> _fonts() async {
-    final regular = await PdfGoogleFonts.notoSansRegular();
-    final bold = await PdfGoogleFonts.notoSansBold();
-    return (regular: regular, bold: bold);
+    final cached = _fontCache;
+    if (cached != null) return cached;
+    final data = await Future.wait([
+      rootBundle.load('assets/fonts/NotoSans-Regular.ttf'),
+      rootBundle.load('assets/fonts/NotoSans-Bold.ttf'),
+    ]);
+    final fonts = (regular: pw.Font.ttf(data[0]), bold: pw.Font.ttf(data[1]));
+    _fontCache = fonts;
+    return fonts;
+  }
+
+  /// Warm the font cache (e.g. when the label screen opens) so the first
+  /// print opens instantly.
+  static Future<void> preload() async {
+    try {
+      await _fonts();
+    } catch (_) {
+      // Printing will surface the error.
+    }
   }
 
   static Future<PdfPageFormat?> pickRollFormat(BuildContext context) {
@@ -54,22 +78,47 @@ class PrintService {
   static Future<void> printQrLabel({
     required String title,
     required String subtitle,
-    required String payload,
+    /// Exact QR content (see `QrPayload.labelData`) — same as the preview.
+    required String qrData,
     String? companyName,
-    String? link,
     PdfPageFormat format = PdfPageFormat.a4,
   }) async {
     final fonts = await _fonts();
     final doc = pw.Document();
     final qrSize = format.width < 200 ? 110.0 : 160.0;
     final company = companyName?.trim() ?? '';
-    // Link is encoded in the QR only — never printed as text on the label.
-    final qrData = () {
-      final l = link?.trim() ?? '';
-      if (l.isEmpty) return payload;
-      if (l.startsWith('http://') || l.startsWith('https://')) return l;
-      return 'https://$l';
-    }();
+    // Build the PDF once up front (not inside onLayout) so the system print
+    // sheet opens immediately and onLayout can never stall it.
+    final bytes = await _buildQrDoc(
+      doc: doc,
+      fonts: fonts,
+      format: format,
+      qrSize: qrSize,
+      company: company,
+      title: title,
+      subtitle: subtitle,
+      qrData: qrData,
+    );
+
+    // System print UI (printers list + Cancel) — Cancel returns to the app.
+    await Printing.layoutPdf(
+      onLayout: (_) async => bytes,
+      name: 'QR-$title',
+      format: PdfPageFormat.a4,
+      dynamicLayout: false,
+    );
+  }
+
+  static Future<Uint8List> _buildQrDoc({
+    required pw.Document doc,
+    required ({pw.Font regular, pw.Font bold}) fonts,
+    required PdfPageFormat format,
+    required double qrSize,
+    required String company,
+    required String title,
+    required String subtitle,
+    required String qrData,
+  }) async {
 
     doc.addPage(
       pw.Page(
@@ -109,43 +158,18 @@ class PrintService {
                 ),
               ),
               pw.SizedBox(height: 4),
-              pw.Text(
-                subtitle,
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(font: fonts.regular, fontSize: 12),
-              ),
+              if (subtitle.isNotEmpty)
+                pw.Text(
+                  subtitle,
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(font: fonts.regular, fontSize: 12),
+                ),
             ],
           );
         },
       ),
     );
-
-    // System print UI (printers list + Cancel). A4 avoids custom-paper trap
-    // that could leave the user stuck after picking a printer.
-    // Prefer layoutPdf over sharePdf so Cancel returns to the app.
-    await Printing.layoutPdf(
-      onLayout: (_) async => doc.save(),
-      name: 'QR-$title',
-      format: PdfPageFormat.a4,
-      dynamicLayout: false,
-    );
-  }
-
-  static Future<void> pickFormatAndPrintQr({
-    required BuildContext context,
-    required String title,
-    required String subtitle,
-    required String payload,
-    String? companyName,
-    String? link,
-  }) async {
-    await printQrLabel(
-      title: title,
-      subtitle: subtitle,
-      payload: payload,
-      companyName: companyName,
-      link: link,
-    );
+    return doc.save();
   }
 
   static Future<void> printReceipt({
@@ -289,8 +313,9 @@ class PrintService {
       ),
     );
 
+    final bytes = await doc.save();
     await Printing.layoutPdf(
-      onLayout: (_) async => doc.save(),
+      onLayout: (_) async => bytes,
       name: 'Receipt-${sale.id.substring(0, 8)}',
     );
   }
