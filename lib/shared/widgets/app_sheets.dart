@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
+
+/// Darker modal scrim so popups stand out clearly (client review Oct 5).
+const Color kAppScrim = Color(0xB3000000); // black @ 70%
 
 /// Style hint for sheet headers (bottom sheet vs floating header panel).
 class AppSheetStyle extends InheritedWidget {
@@ -51,7 +53,7 @@ Future<T?> showAppSheet<T>({
     isDismissible: isDismissible,
     enableDrag: isDismissible,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: 0.45),
+    barrierColor: kAppScrim,
     builder: (ctx) {
       final mq = MediaQuery.of(ctx);
       final maxH = mq.size.height * (heightFactor ?? 0.78);
@@ -105,7 +107,7 @@ Future<T?> _showHeaderPanel<T>({
     context: context,
     barrierDismissible: isDismissible,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    barrierColor: Colors.black.withValues(alpha: 0.42),
+    barrierColor: kAppScrim,
     transitionDuration: const Duration(milliseconds: 240),
     pageBuilder: (ctx, animation, secondaryAnimation) {
       final mq = MediaQuery.of(ctx);
@@ -193,7 +195,7 @@ Future<bool> showAppConfirmDialog({
   final confirm = confirmLabel ?? t('done');
   final result = await showDialog<bool>(
     context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.5),
+    barrierColor: kAppScrim,
     builder: (ctx) {
       return Dialog(
         backgroundColor: p.cardElevated,
@@ -366,8 +368,11 @@ class AppSheetActions extends ConsumerWidget {
     final t = ref.watch(tProvider);
     final reset = resetLabel ?? t('reset');
     final apply = applyLabel ?? t('filter');
+    // Floating top panel is not at the screen bottom — no home-indicator gap.
+    final fromTop = AppSheetStyle.maybeOf(context)?.fromTop ?? false;
     return SafeArea(
       top: false,
+      bottom: !fromTop,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: Row(
@@ -599,4 +604,434 @@ class AppRadioRow<T> extends StatelessWidget {
       ),
     );
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Shared sort sheet — identical on Inventory, Sell, Customers, Turnover,
+// Receipts. Each option has two directions toggled by a switch; the label
+// shows the active direction (no arrows / check marks). Reset + Sort buttons.
+// ---------------------------------------------------------------------------
+
+/// One sort criterion with two directions (e.g. Name A–Z / Name Z–A).
+class SortOption<K> {
+  const SortOption({
+    required this.key,
+    required this.icon,
+    required this.label,
+    required this.reversedLabel,
+  });
+
+  final K key;
+  final IconData icon;
+
+  /// Label for the default direction (toggle off).
+  final String label;
+
+  /// Label for the second direction (toggle on).
+  final String reversedLabel;
+}
+
+/// Selected sort criterion + direction.
+@immutable
+class SortState<K> {
+  const SortState(this.key, {this.reversed = false});
+
+  final K key;
+  final bool reversed;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SortState<K> && other.key == key && other.reversed == reversed;
+
+  @override
+  int get hashCode => Object.hash(key, reversed);
+}
+
+/// Opens the shared sort sheet. Returns the chosen state when the user taps
+/// Sort, [defaultState] on Reset, or `null` when dismissed.
+Future<SortState<K>?> showSortSheet<K>({
+  required BuildContext context,
+  required List<SortOption<K>> options,
+  required SortState<K> current,
+  required SortState<K> defaultState,
+}) {
+  return showAppSheet<SortState<K>>(
+    context: context,
+    alignTop: true,
+    heightFactor: 0.8,
+    builder: (ctx) => _SortSheetBody<K>(
+      options: options,
+      current: current,
+      defaultState: defaultState,
+    ),
+  );
+}
+
+class _SortSheetBody<K> extends ConsumerStatefulWidget {
+  const _SortSheetBody({
+    required this.options,
+    required this.current,
+    required this.defaultState,
+  });
+
+  final List<SortOption<K>> options;
+  final SortState<K> current;
+  final SortState<K> defaultState;
+
+  @override
+  ConsumerState<_SortSheetBody<K>> createState() => _SortSheetBodyState<K>();
+}
+
+class _SortSheetBodyState<K> extends ConsumerState<_SortSheetBody<K>> {
+  late K _selected = widget.current.key;
+  late final Map<K, bool> _reversed = {
+    for (final o in widget.options)
+      o.key: o.key == widget.current.key ? widget.current.reversed : false,
+  };
+
+  void _select(K key) {
+    AppHaptics.selection();
+    setState(() => _selected = key);
+  }
+
+  void _toggle(K key, bool value) {
+    AppHaptics.selection();
+    setState(() {
+      _reversed[key] = value;
+      _selected = key;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    final t = ref.watch(tProvider);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppSheetHeader(title: t('sort')),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < widget.options.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  _SortRow(
+                    option: widget.options[i],
+                    selected: widget.options[i].key == _selected,
+                    reversed: _reversed[widget.options[i].key] ?? false,
+                    palette: p,
+                    onTap: () => _select(widget.options[i].key),
+                    onToggle: (v) => _toggle(widget.options[i].key, v),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        AppSheetActions(
+          applyLabel: t('sort'),
+          onReset: () => Navigator.pop(context, widget.defaultState),
+          onApply: () => Navigator.pop(
+            context,
+            SortState<K>(_selected, reversed: _reversed[_selected] ?? false),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SortRow<K> extends StatelessWidget {
+  const _SortRow({
+    required this.option,
+    required this.selected,
+    required this.reversed,
+    required this.palette,
+    required this.onTap,
+    required this.onToggle,
+  });
+
+  final SortOption<K> option;
+  final bool selected;
+  final bool reversed;
+  final AppPalette palette;
+  final VoidCallback onTap;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+          decoration: BoxDecoration(
+            color: p.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? p.fabBorder : p.stroke,
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? p.fabBorder.withValues(alpha: 0.18)
+                      : p.cardElevated,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  option.icon,
+                  size: 20,
+                  color: selected ? p.fabBorder : p.textMuted,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  child: Text(
+                    reversed ? option.reversedLabel : option.label,
+                    key: ValueKey(reversed),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      height: 1.2,
+                      color: p.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Transform.scale(
+                scale: 0.85,
+                child: Switch.adaptive(
+                  value: reversed,
+                  onChanged: onToggle,
+                  activeTrackColor: p.fabBorder,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared filter sheet layout: header, scrollable body, Reset + Filter.
+/// Use inside [showAppSheet] with `alignTop: true` (same as the sort sheet).
+class AppFilterSheet extends ConsumerWidget {
+  const AppFilterSheet({
+    super.key,
+    required this.child,
+    required this.onReset,
+    required this.onApply,
+  });
+
+  final Widget child;
+  final VoidCallback onReset;
+  final VoidCallback onApply;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(tProvider);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppSheetHeader(title: t('filter')),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: child,
+          ),
+        ),
+        AppSheetActions(onReset: onReset, onApply: onApply),
+      ],
+    );
+  }
+}
+
+/// Labeled group inside [AppFilterSheet] (e.g. "Category", "Contact").
+class AppFilterSection extends StatelessWidget {
+  const AppFilterSection({super.key, required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              color: p.textMuted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// Date field used by every date-range filter.
+class AppFilterDateField extends StatelessWidget {
+  const AppFilterDateField({
+    super.key,
+    required this.placeholder,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String placeholder;
+  final DateTime? value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    final v = value;
+    final text = v == null
+        ? placeholder
+        : '${v.day.toString().padLeft(2, '0')}.'
+            '${v.month.toString().padLeft(2, '0')}.${v.year}';
+    return InkWell(
+      onTap: () {
+        AppHaptics.selection();
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: p.cardElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: p.stroke),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: v == null ? p.textMuted : p.textPrimary,
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_drop_down_rounded, size: 22, color: p.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Category dropdown used by inventory-style filters (only existing ones).
+class AppCategoryDropdown extends ConsumerWidget {
+  const AppCategoryDropdown({
+    super.key,
+    required this.categories,
+    required this.value,
+    required this.onChanged,
+  });
+
+  /// (id, name) pairs, already filtered to categories that still exist.
+  final List<({String id, String name})> categories;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final p = AppPalette.of(context);
+    final t = ref.watch(tProvider);
+    final safeValue =
+        categories.any((c) => c.id == value) ? value : null;
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: p.cardElevated,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: p.stroke),
+      ),
+      alignment: Alignment.center,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          isExpanded: true,
+          value: safeValue,
+          hint: Text(
+            t('all_categories'),
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: p.textMuted,
+            ),
+          ),
+          icon: Icon(Icons.arrow_drop_down_rounded, color: p.textMuted),
+          dropdownColor: p.cardElevated,
+          borderRadius: BorderRadius.circular(12),
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: p.textPrimary,
+          ),
+          items: [
+            DropdownMenuItem<String?>(
+              value: null,
+              child: Text(t('all_categories')),
+            ),
+            for (final c in categories)
+              DropdownMenuItem<String?>(
+                value: c.id,
+                child: Text(c.name, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+/// Date picker helper shared by filters.
+Future<DateTime?> pickFilterDate(BuildContext context, DateTime? initial) {
+  return showDatePicker(
+    context: context,
+    initialDate: initial ?? DateTime.now(),
+    firstDate: DateTime(2000),
+    lastDate: DateTime.now().add(const Duration(days: 365)),
+    barrierColor: kAppScrim,
+  );
 }

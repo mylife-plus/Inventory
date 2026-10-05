@@ -279,6 +279,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       dialogTheme: DialogThemeData(
+        barrierColor: const Color(0xB3000000),
         backgroundColor: p.cardElevated,
         surfaceTintColor: Colors.transparent,
         elevation: 10,
@@ -296,7 +297,7 @@ class AppTheme {
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: p.cardElevated,
         surfaceTintColor: Colors.transparent,
-        modalBarrierColor: Colors.black.withValues(alpha: 0.45),
+        modalBarrierColor: const Color(0xB3000000),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),

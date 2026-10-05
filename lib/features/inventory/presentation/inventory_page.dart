@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
-import 'package:inventory_app/core/utils/app_haptics.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
+import 'package:inventory_app/features/inventory/presentation/item_list_tools.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
@@ -23,7 +23,7 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
   final _search = TextEditingController();
   String? _categoryFilter;
   bool _showSearch = false;
-  _InvSort _sort = _InvSort.name;
+  SortState<ItemSortKey> _sort = kDefaultItemSort;
   /// Collapsed category section keys (expanded by default).
   final Set<String> _collapsed = {};
 
@@ -35,325 +35,28 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
 
   Future<void> _showSortSheet() async {
     final t = ref.read(tProvider);
-    await showAppSheet<void>(
+    final picked = await showSortSheet<ItemSortKey>(
       context: context,
-      heightFactor: 0.48,
-      alignTop: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setModal) {
-            Widget row({
-              required String label,
-              required IconData icon,
-              required bool selected,
-              required IconData? directionIcon,
-              required VoidCallback onTap,
-            }) {
-              final p = AppPalette.of(ctx);
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    AppHaptics.selection();
-                    onTap();
-                    setModal(() {});
-                  },
-                  borderRadius: BorderRadius.circular(12),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: p.card,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: selected ? p.fabBorder : p.stroke,
-                        width: selected ? 1.4 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? p.fabBorder.withValues(alpha: 0.18)
-                                : p.cardElevated,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            icon,
-                            size: 20,
-                            color: selected ? p.fabBorder : p.textMuted,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                              color: p.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (selected && directionIcon != null) ...[
-                          Icon(
-                            directionIcon,
-                            size: 22,
-                            color: p.fabBorder,
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Icon(
-                          selected
-                              ? Icons.check_circle_rounded
-                              : Icons.circle_outlined,
-                          size: 22,
-                          color: selected ? p.fabBorder : p.textMuted,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            final nameSelected =
-                _sort == _InvSort.name || _sort == _InvSort.nameDesc;
-            final priceSelected =
-                _sort == _InvSort.priceHigh || _sort == _InvSort.priceLow;
-            final stockSelected =
-                _sort == _InvSort.stockHigh || _sort == _InvSort.stockLow;
-
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppSheetHeader(title: t('sort')),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        row(
-                          label: nameSelected && _sort == _InvSort.nameDesc
-                              ? t('sort_name_za')
-                              : t('sort_name_az'),
-                          icon: Icons.sort_by_alpha_rounded,
-                          selected: nameSelected,
-                          directionIcon: nameSelected
-                              ? (_sort == _InvSort.name
-                                  ? Icons.arrow_downward_rounded
-                                  : Icons.arrow_upward_rounded)
-                              : null,
-                          onTap: () {
-                            setState(() {
-                              if (_sort == _InvSort.name) {
-                                _sort = _InvSort.nameDesc;
-                              } else if (_sort == _InvSort.nameDesc) {
-                                _sort = _InvSort.name;
-                              } else {
-                                _sort = _InvSort.name;
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        row(
-                          label: priceSelected && _sort == _InvSort.priceLow
-                              ? t('sort_lowest_price')
-                              : t('sort_highest_price'),
-                          icon: Icons.payments_rounded,
-                          selected: priceSelected,
-                          directionIcon: priceSelected
-                              ? (_sort == _InvSort.priceHigh
-                                  ? Icons.arrow_downward_rounded
-                                  : Icons.arrow_upward_rounded)
-                              : null,
-                          onTap: () {
-                            setState(() {
-                              if (_sort == _InvSort.priceHigh) {
-                                _sort = _InvSort.priceLow;
-                              } else if (_sort == _InvSort.priceLow) {
-                                _sort = _InvSort.priceHigh;
-                              } else {
-                                _sort = _InvSort.priceHigh;
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        row(
-                          label: stockSelected && _sort == _InvSort.stockLow
-                              ? t('sort_lowest_stock')
-                              : t('sort_highest_stock'),
-                          icon: Icons.inventory_2_outlined,
-                          selected: stockSelected,
-                          directionIcon: stockSelected
-                              ? (_sort == _InvSort.stockHigh
-                                  ? Icons.arrow_downward_rounded
-                                  : Icons.arrow_upward_rounded)
-                              : null,
-                          onTap: () {
-                            setState(() {
-                              if (_sort == _InvSort.stockHigh) {
-                                _sort = _InvSort.stockLow;
-                              } else if (_sort == _InvSort.stockLow) {
-                                _sort = _InvSort.stockHigh;
-                              } else {
-                                _sort = _InvSort.stockHigh;
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        row(
-                          label: t('sort_most_recent'),
-                          icon: Icons.schedule_rounded,
-                          selected: _sort == _InvSort.recent,
-                          directionIcon: null,
-                          onTap: () {
-                            setState(() => _sort = _InvSort.recent);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      options: itemSortOptions(t),
+      current: _sort,
+      defaultState: kDefaultItemSort,
     );
+    if (picked != null && mounted) setState(() => _sort = picked);
   }
 
   Future<void> _showFilterSheet() async {
     final t = ref.read(tProvider);
     final cats = ref.read(categoriesProvider).valueOrNull ?? [];
     final items = ref.read(inventoryItemsProvider).valueOrNull ?? [];
-    final usedIds = items
-        .map((i) => i.categoryId)
-        .whereType<String>()
-        .toSet();
-    final usedCats = cats
-        .where((c) => usedIds.contains(c.id))
-        .toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    var cat = _categoryFilter;
-    if (cat != null && cat != '__uncat__' && !usedIds.contains(cat)) {
-      cat = null;
-    }
-
-    final applied = await showAppSheet<bool>(
-      context: context,
-      heightFactor: 0.42,
-      alignTop: true,
-      builder: (ctx) {
-        final p = AppPalette.of(ctx);
-        return StatefulBuilder(
-          builder: (ctx, setModal) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppSheetHeader(title: t('filter')),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: Container(
-                    height: 52,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: p.bg,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: p.stroke),
-                    ),
-                    alignment: Alignment.center,
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String?>(
-                        isExpanded: true,
-                        value: cat,
-                        hint: Text(
-                          t('all_categories'),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: p.textMuted,
-                          ),
-                        ),
-                        icon: Icon(
-                          Icons.arrow_drop_down_rounded,
-                          color: p.textMuted,
-                        ),
-                        dropdownColor: p.cardElevated,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: p.textPrimary,
-                        ),
-                        items: [
-                          DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text(t('all_categories')),
-                          ),
-                          ...usedCats.map(
-                            (c) => DropdownMenuItem<String?>(
-                              value: c.id,
-                              child: Text(c.name),
-                            ),
-                          ),
-                        ],
-                        onChanged: (v) => setModal(() => cat = v),
-                      ),
-                    ),
-                  ),
-                ),
-                AppSheetActions(
-                  onReset: () {
-                    Navigator.pop(ctx);
-                    setState(() => _categoryFilter = null);
-                  },
-                  onApply: () => Navigator.pop(ctx, true),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    final picked = await showItemFilterSheet(
+      context,
+      t: t,
+      categories: usedCategories(cats, items),
+      current: _categoryFilter,
     );
-
-    if (applied == true && mounted) {
-      setState(() => _categoryFilter = cat);
+    if (picked != null && mounted) {
+      setState(() => _categoryFilter = picked.categoryId);
     }
-  }
-
-  List<InventoryItem> _sorted(List<InventoryItem> items) {
-    final list = [...items];
-    switch (_sort) {
-      case _InvSort.recent:
-        list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      case _InvSort.name:
-        list.sort(
-            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-      case _InvSort.nameDesc:
-        list.sort(
-            (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()));
-      case _InvSort.priceHigh:
-        list.sort((a, b) => b.price.compareTo(a.price));
-      case _InvSort.priceLow:
-        list.sort((a, b) => a.price.compareTo(b.price));
-      case _InvSort.stockHigh:
-        list.sort((a, b) => b.amount.compareTo(a.amount));
-      case _InvSort.stockLow:
-        list.sort((a, b) => a.amount.compareTo(b.amount));
-    }
-    return list;
   }
 
   @override
@@ -405,23 +108,18 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
             onSearch: () => setState(() => _showSearch = !_showSearch),
             onFilter: _showFilterSheet,
             onMenu: _showSortSheet,
-            sortActive: _sort != _InvSort.name,
+            sortActive: _sort != kDefaultItemSort,
             filterActive: _categoryFilter != null,
-            searchActive: _showSearch,
+            searchActive: _showSearch || _search.text.trim().isNotEmpty,
           ),
           if (_showSearch)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              child: TextField(
-                controller: _search,
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: t('search'),
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  isDense: true,
-                ),
-              ),
+            AppSearchField(
+              controller: _search,
+              hintText: t('search'),
+              onChanged: (_) => setState(() {}),
+              onDismiss: () {
+                if (mounted) setState(() => _showSearch = false);
+              },
             ),
           Expanded(
             child: itemsAsync.when(
@@ -430,7 +128,7 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
               data: (items) {
                 final t = ref.read(tProvider);
                 final q = _search.text.trim().toLowerCase();
-                final filtered = _sorted(
+                final filtered = sortItems(
                   items.where((item) {
                     final matchQ =
                         q.isEmpty || item.title.toLowerCase().contains(q);
@@ -440,6 +138,7 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
                             : item.categoryId == _categoryFilter);
                     return matchQ && matchC;
                   }).toList(),
+                  _sort,
                 );
 
                 if (filtered.isEmpty) {
@@ -524,16 +223,6 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
       ),
     );
   }
-}
-
-enum _InvSort {
-  name,
-  nameDesc,
-  priceHigh,
-  priceLow,
-  stockHigh,
-  stockLow,
-  recent,
 }
 
 class _InventoryCard extends StatelessWidget {

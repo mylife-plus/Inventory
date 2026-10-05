@@ -212,32 +212,14 @@ class ClientHeader extends ConsumerWidget {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // Center: selected icon + title (true screen center)
-                  // Extra horizontal inset so title stays clear of left menu icons
-                  // (long translations / DE labels must not crowd the nav).
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 112),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        AppIcon(titleAsset, size: 26),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 18,
-                              height: 1.1,
-                              color: p.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ],
+                  // Center: selected icon + title. Never truncated: stays at
+                  // true screen center when it fits, otherwise shifts into the
+                  // free space right of the nav icons, then scales down.
+                  Positioned.fill(
+                    child: _HeaderTitle(
+                      title: title,
+                      titleAsset: titleAsset,
+                      color: p.textPrimary,
                     ),
                   ),
                   // Left unselected + right settings
@@ -309,10 +291,12 @@ class ClientHeader extends ConsumerWidget {
                           active: filterActive,
                         ),
                         const SizedBox(width: 48),
-                        HeaderActionIcon(
-                          asset: AppAssets.search,
-                          onTap: onSearch,
-                          active: searchActive,
+                        TextFieldTapRegion(
+                          child: HeaderActionIcon(
+                            asset: AppAssets.search,
+                            onTap: onSearch,
+                            active: searchActive,
+                          ),
                         ),
                       ],
                       const Spacer(),
@@ -336,6 +320,9 @@ class ClientHeader extends ConsumerWidget {
   }
 }
 
+/// Highlight for active sort / filter / search icons (client: orange).
+const Color kActiveOrange = Color(0xFFFF9F0A);
+
 /// Sort / filter / search row icon — same size + gaps as inventory header.
 class HeaderActionIcon extends StatelessWidget {
   const HeaderActionIcon({
@@ -353,8 +340,7 @@ class HeaderActionIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = AppPalette.of(context);
-    final iconColor = active ? p.fabBorder : color;
+    final iconColor = active ? kActiveOrange : color;
     return Pressable(
       onTap: onTap ?? () {},
       enabled: onTap != null,
@@ -403,12 +389,139 @@ class ListActionIconsRow extends StatelessWidget {
           active: filterActive,
         ),
         const SizedBox(width: 48),
-        HeaderActionIcon(
-          asset: AppAssets.search,
-          onTap: onSearch,
-          active: searchActive,
+        TextFieldTapRegion(
+          child: HeaderActionIcon(
+            asset: AppAssets.search,
+            onTap: onSearch,
+            active: searchActive,
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _HeaderTitle extends StatelessWidget {
+  const _HeaderTitle({
+    required this.title,
+    required this.titleAsset,
+    required this.color,
+  });
+
+  final String title;
+  final String titleAsset;
+  final Color color;
+
+  // Left nav: 2 × 44 icons + 10 gap, +12 breathing room.
+  static const double _leftReserve = 110;
+  // Right settings icon: 40, +12 breathing room.
+  static const double _rightReserve = 52;
+  static const double _iconAndGap = 26 + 8;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontWeight: FontWeight.w600,
+      fontSize: 18,
+      height: 1.1,
+      color: color,
+    );
+    return LayoutBuilder(
+      builder: (context, c) {
+        final tp = TextPainter(
+          text: TextSpan(
+            text: title,
+            style: DefaultTextStyle.of(context).style.merge(style),
+          ),
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout();
+        final contentW = _iconAndGap + tp.width + 2;
+        tp.dispose();
+        final fitsCentered = contentW <= c.maxWidth - 2 * _leftReserve;
+        return Padding(
+          padding: EdgeInsets.only(
+            left: _leftReserve,
+            right: fitsCentered ? _leftReserve : _rightReserve,
+          ),
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(titleAsset, size: 26),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: style,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Search box shown under list headers. Hides itself when the user taps
+/// anywhere outside it (all pages behave the same).
+class AppSearchField extends StatelessWidget {
+  const AppSearchField({
+    super.key,
+    required this.controller,
+    required this.hintText,
+    required this.onChanged,
+    required this.onDismiss,
+    this.padding = const EdgeInsets.fromLTRB(16, 4, 16, 4),
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onDismiss;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: TextField(
+        controller: controller,
+        autofocus: true,
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
+        onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+        onTapOutside: (_) {
+          FocusManager.instance.primaryFocus?.unfocus();
+          // Defer so a list-card tap under the finger still receives onTap.
+          WidgetsBinding.instance.addPostFrameCallback((_) => onDismiss());
+        },
+        decoration: InputDecoration(
+          hintText: hintText,
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (context, v, _) => v.text.isEmpty
+                ? const SizedBox.shrink()
+                : IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    onPressed: () {
+                      controller.clear();
+                      onChanged('');
+                    },
+                  ),
+          ),
+          isDense: true,
+        ),
+      ),
     );
   }
 }
