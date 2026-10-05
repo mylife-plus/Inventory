@@ -50,7 +50,6 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   /// Pre-built label PDF — Print only opens the sheet when this matches
   /// [_pdfCacheKey] so iOS never gets an empty/slow onLayout rebuild.
   Uint8List? _pdfBytes;
-  Uint8List? _pdfPreviewPng;
   String? _pdfCacheKey;
   Timer? _pdfDebounce;
   int _pdfGen = 0;
@@ -115,11 +114,8 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
         companyName: _companyName,
       );
       if (!mounted || gen != _pdfGen) return;
-      final preview = await PrintService.rasterQrLabelPreview(bytes);
-      if (!mounted || gen != _pdfGen) return;
       setState(() {
         _pdfBytes = bytes;
-        _pdfPreviewPng = preview;
         _pdfCacheKey = key;
         _pdfBuilding = false;
       });
@@ -129,7 +125,6 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
         setState(() {
           _pdfBuilding = false;
           _pdfBytes = null;
-          _pdfPreviewPng = null;
           _pdfCacheKey = null;
         });
       }
@@ -440,39 +435,6 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
               ),
             ),
           ),
-          if (_pdfPreviewPng != null) ...[
-            const SizedBox(height: 10),
-            FadeSlide(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: p.stroke),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Print preview',
-                      style: TextStyle(
-                        color: p.textSecondary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Image.memory(
-                      _pdfPreviewPng!,
-                      fit: BoxFit.contain,
-                      height: 220,
-                      filterQuality: FilterQuality.medium,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
           const SizedBox(height: 14),
           TextField(
             controller: _titleCtrl,
