@@ -36,7 +36,6 @@ class MainActivity : FlutterActivity() {
         if (vibrator != null && vibrator.hasVibrator()) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val effect = when (type) {
-                    // selection = the common UI "click" — match iOS selection strength
                     "selection" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
                     "light" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
                     "medium" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
@@ -45,12 +44,25 @@ class MainActivity : FlutterActivity() {
                 }
                 vibrator.vibrate(effect)
             } else {
-                @Suppress("DEPRECATION")
-                val (ms, amp) = when (type) {
-                    "heavy" -> 40L to 255
-                    "medium" -> 28L to 220
-                    "light" -> 18L to 180
-                    else -> 22L to 200 // selection
+                val ms: Long
+                val amp: Int
+                when (type) {
+                    "heavy" -> {
+                        ms = 40L
+                        amp = 255
+                    }
+                    "medium" -> {
+                        ms = 28L
+                        amp = 220
+                    }
+                    "light" -> {
+                        ms = 18L
+                        amp = 180
+                    }
+                    else -> {
+                        ms = 22L
+                        amp = 200
+                    }
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     vibrator.vibrate(VibrationEffect.createOneShot(ms, amp))
@@ -61,12 +73,11 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // Also poke the view haptic layer (works even when vibrator is restricted).
         val feedback = when (type) {
             "heavy" -> HapticFeedbackConstants.LONG_PRESS
             "medium" -> HapticFeedbackConstants.KEYBOARD_TAP
             "light" -> HapticFeedbackConstants.KEYBOARD_TAP
-            else -> HapticFeedbackConstants.KEYBOARD_TAP // selection
+            else -> HapticFeedbackConstants.KEYBOARD_TAP
         }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
