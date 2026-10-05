@@ -26,37 +26,63 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+    /**
+     * Premium click feel on Android. Stock EFFECT_TICK / Flutter selectionClick
+     * are nearly silent on many devices; map selection/light to a real CLICK and
+     * use short one-shot pulses as a fallback so taps feel like iOS.
+     */
     private fun performAppHaptic(type: String) {
-        val view = window?.decorView
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val manager = getSystemService(VibratorManager::class.java)
-                manager?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                getSystemService(VIBRATOR_SERVICE) as? Vibrator
-            }
-            if (vibrator != null && vibrator.hasVibrator()) {
+        val vibrator = resolveVibrator()
+        if (vibrator != null && vibrator.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val effect = when (type) {
-                    "heavy" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                    // selection = the common UI "click" — match iOS selection strength
+                    "selection" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
+                    "light" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
                     "medium" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
-                    "light" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-                    else -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+                    "heavy" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                    else -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
                 }
                 vibrator.vibrate(effect)
-                return
+            } else {
+                @Suppress("DEPRECATION")
+                val (ms, amp) = when (type) {
+                    "heavy" -> 40L to 255
+                    "medium" -> 28L to 220
+                    "light" -> 18L to 180
+                    else -> 22L to 200 // selection
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(ms, amp))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(ms)
+                }
             }
         }
 
+        // Also poke the view haptic layer (works even when vibrator is restricted).
         val feedback = when (type) {
             "heavy" -> HapticFeedbackConstants.LONG_PRESS
             "medium" -> HapticFeedbackConstants.KEYBOARD_TAP
-            "light" -> HapticFeedbackConstants.VIRTUAL_KEY
-            else -> HapticFeedbackConstants.KEYBOARD_TAP
+            "light" -> HapticFeedbackConstants.KEYBOARD_TAP
+            else -> HapticFeedbackConstants.KEYBOARD_TAP // selection
         }
-        view?.performHapticFeedback(
-            feedback,
-            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
-        )
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+        } else {
+            @Suppress("DEPRECATION")
+            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+        }
+        window?.decorView?.performHapticFeedback(feedback, flags)
+    }
+
+    private fun resolveVibrator(): Vibrator? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(VIBRATOR_SERVICE) as? Vibrator
+        }
     }
 }
