@@ -709,9 +709,7 @@ class _ReceiptDetailsSettingsPageState
                     keyboardType: TextInputType.streetAddress,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(labelText: 'Street'),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? t('required') : null,
-                  ),
+                                      ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -720,9 +718,7 @@ class _ReceiptDetailsSettingsPageState
                     keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(labelText: 'Nr.'),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? t('required') : null,
-                  ),
+                                      ),
                 ),
               ],
             ),
@@ -735,9 +731,7 @@ class _ReceiptDetailsSettingsPageState
                     decoration: const InputDecoration(labelText: 'ZIP'),
                     keyboardType: TextInputType.number,
                     textInputAction: TextInputAction.next,
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? t('required') : null,
-                  ),
+                                      ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -748,9 +742,7 @@ class _ReceiptDetailsSettingsPageState
                     keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(labelText: 'City'),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? t('required') : null,
-                  ),
+                                      ),
                 ),
               ],
             ),
@@ -760,8 +752,6 @@ class _ReceiptDetailsSettingsPageState
               decoration: const InputDecoration(labelText: 'Phone Number'),
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.next,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? t('required') : null,
             ),
             const SizedBox(height: 12),
             Align(
@@ -776,7 +766,8 @@ class _ReceiptDetailsSettingsPageState
                       const TextInputType.numberWithOptions(decimal: true),
                   textInputAction: TextInputAction.done,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return t('required');
+                    // Optional — but must be a number when filled in.
+                    if (v == null || v.trim().isEmpty) return null;
                     final raw =
                         v.replaceAll('%', '').replaceAll(',', '.').trim();
                     if (double.tryParse(raw) == null) return t('required');

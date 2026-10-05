@@ -245,6 +245,47 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     );
   }
 
+  void _leave() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/inventory');
+    }
+  }
+
+  Future<void> _changeCustomer(Sale sale) async {
+    final changed =
+        await context.push<bool>('/sell/customer?saleId=${sale.id}');
+    if (changed != true || !mounted) return;
+    final fresh = await ref.read(saleRepositoryProvider).get(sale.id);
+    if (mounted && fresh != null) setState(() => _sale = fresh);
+  }
+
+  Widget _customerCard(Sale sale, MoneyFormatter money) {
+    final t = ref.read(tProvider);
+    final customers = ref.watch(customersProvider).valueOrNull ?? const [];
+    final customer = sale.customerId == null
+        ? null
+        : customers.where((c) => c.id == sale.customerId).firstOrNull;
+    if (customer == null) {
+      final name = sale.customerName;
+      return CustomerListCard(
+        name: (name == null || name.isEmpty || name == 'Guest')
+            ? t('guest')
+            : name,
+        money: money,
+        naStats: true,
+        onTap: () => _changeCustomer(sale),
+      );
+    }
+    return SelectCustomerTile(
+      key: ValueKey('receipt-cust-${customer.id}-${sale.total}'),
+      customer: customer,
+      money: money,
+      onTap: () => _changeCustomer(sale),
+    );
+  }
+
   Future<void> _editSaleItems(Sale sale) async {
     // Prefill sell cart with this receipt's lines and open the sell items page.
     ref.read(cartProvider.notifier).replaceAll(sale.lines);
@@ -266,11 +307,13 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       gross: sale.total,
       rate: settings.vatRate,
     );
-    final b = StringBuffer()
-      ..writeln(settings.companyName)
-      ..writeln(settings.street.replaceAll('\u001F', ' '))
-      ..writeln('${settings.zip} ${settings.city}'.trim())
-      ..writeln(settings.phone)
+    final b = StringBuffer()..writeln(settings.companyName);
+    final street = settings.street.replaceAll('\u001F', ' ').trim();
+    final zipCity = '${settings.zip} ${settings.city}'.trim();
+    if (street.isNotEmpty) b.writeln(street);
+    if (zipCity.isNotEmpty) b.writeln(zipCity);
+    if (settings.phone.trim().isNotEmpty) b.writeln(settings.phone);
+    b
       ..writeln('------------------------------')
       ..writeln('${t('receipt')} ${sale.id.substring(0, 8).toUpperCase()}')
       ..writeln(sale.createdAt.toLocal())
@@ -315,13 +358,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
           title: Text(t('receipt_details')),
           leading: IconButton(
             icon: const Icon(Icons.close_rounded),
-            onPressed: () {
-              if (context.canPop()) {
-                context.pop();
-              } else {
-                context.go('/inventory');
-              }
-            },
+            onPressed: _leave,
           ),
         ),
         body: Padding(
@@ -371,206 +408,220 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
 
     final receiptQr = QrPayload.encodeReceipt(sale.id);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(t('send_receipt')),
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/inventory');
-            }
-          },
-        ),
-        actions: [
-          IconButton(
-            tooltip: t('edit_item'),
-            onPressed: () => _editSaleItems(sale),
-            icon: Icon(Icons.edit_rounded, color: p.textSecondary),
+    final zipCity = '${settings.zip} ${settings.city}'.trim();
+
+    final receiptCard = Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        children: [
-          FadeSlide(
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
+      clipBehavior: Clip.antiAlias,
+      // Long receipts scroll inside the card so the page always fits.
+      child: Scrollbar(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+          child: DefaultTextStyle(
+            style: const TextStyle(
+              color: Color(0xFF111111),
+              fontSize: 14,
+              height: 1.35,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  settings.companyName,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
                   ),
-                ],
-              ),
-              child: DefaultTextStyle(
-                style: const TextStyle(
-                  color: Color(0xFF111111),
-                  fontSize: 14,
-                  height: 1.35,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      settings.companyName,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 20,
-                      ),
+                if (settings.street.trim().isNotEmpty)
+                  Text(settings.street.replaceAll('\u001F', ' '),
+                      textAlign: TextAlign.center),
+                if (zipCity.isNotEmpty)
+                  Text(zipCity, textAlign: TextAlign.center),
+                if (settings.phone.isNotEmpty)
+                  Text(settings.phone, textAlign: TextAlign.center),
+                const Divider(height: 22, color: Color(0xFFDDDDDD)),
+                Text(
+                  '${t('receipt')} ${sale.id.substring(0, 8).toUpperCase()}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  sale.createdAt.toLocal().toString().split('.').first,
+                  style:
+                      const TextStyle(fontSize: 12, color: Color(0xFF666666)),
+                ),
+                const Divider(height: 22, color: Color(0xFFDDDDDD)),
+                ...sale.lines.map(
+                  (l) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${formatQty(l.quantity)}  ${l.title}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Text(money.format(l.lineTotal)),
+                      ],
                     ),
-                    if (settings.street.isNotEmpty)
-                      Text(settings.street.replaceAll('\u001F', ' '),
-                          textAlign: TextAlign.center),
-                    Text(
-                      '${settings.zip} ${settings.city}'.trim(),
-                      textAlign: TextAlign.center,
-                    ),
-                    if (settings.phone.isNotEmpty)
-                      Text(settings.phone, textAlign: TextAlign.center),
-                    const Divider(height: 22, color: Color(0xFFDDDDDD)),
-                    Text(
-                      '${t('receipt')} ${sale.id.substring(0, 8).toUpperCase()}',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    Text(
-                      sale.createdAt.toLocal().toString().split('.').first,
-                      style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF666666)),
-                    ),
-                    const Divider(height: 22, color: Color(0xFFDDDDDD)),
-                    ...sale.lines.map(
-                      (l) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
+                  ),
+                ),
+                const Divider(height: 22, color: Color(0xFFDDDDDD)),
+                Builder(
+                  builder: (_) {
+                    final vat = VatBreakdown.inclusive(
+                      gross: sale.total,
+                      rate: settings.vatRate,
+                    );
+                    return Column(
+                      children: [
+                        if (vat.rate > 0) ...[
+                          Row(
+                            children: [
+                              Expanded(child: Text(t('subtotal'))),
+                              Text(money.format(vat.net)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${t('vat')} ${formatQty(vat.rate)}%',
+                                ),
+                              ),
+                              Text(money.format(vat.vat)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Row(
                           children: [
                             Expanded(
                               child: Text(
-                                '${formatQty(l.quantity)}  ${l.title}',
+                                t('total').toUpperCase(),
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.w600),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                ),
                               ),
                             ),
-                            Text(money.format(l.lineTotal)),
+                            Text(
+                              money.format(sale.total),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 18,
+                                color: Color(0xFF1FA800),
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                    ),
-                    const Divider(height: 22, color: Color(0xFFDDDDDD)),
-                    Builder(
-                      builder: (_) {
-                        final vat = VatBreakdown.inclusive(
-                          gross: sale.total,
-                          rate: settings.vatRate,
-                        );
-                        return Column(
-                          children: [
-                            if (vat.rate > 0) ...[
-                              Row(
-                                children: [
-                                  Expanded(child: Text(t('subtotal'))),
-                                  Text(money.format(vat.net)),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '${t('vat')} ${formatQty(vat.rate)}%',
-                                    ),
-                                  ),
-                                  Text(money.format(vat.vat)),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                            ],
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    t('total').toUpperCase(),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 18,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  money.format(sale.total),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 18,
-                                    color: Color(0xFF1FA800),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 18),
-                    Center(
-                      child: QrImageView(
-                        data: receiptQr,
-                        size: 140,
-                        backgroundColor: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      t('thank_you'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
-              ),
+                const SizedBox(height: 18),
+                Center(
+                  child: QrImageView(
+                    data: receiptQr,
+                    size: 140,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  t('thank_you'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          AccentButton(
-            label: t('print_receipt'),
-            icon: Icons.print_rounded,
-            onPressed: () => _withReceiptDetails(
-              () => PrintService.pickFormatAndPrintReceipt(
-                context: context,
-                shop: ref.read(shopSettingsProvider).valueOrNull ?? settings,
-                sale: sale,
-                money: money.format,
-              ),
+        ),
+      ),
+    );
+
+    return PopScope(
+      canPop: context.canPop(),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) context.go('/inventory');
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: Text(t('send_receipt')),
+          actions: [
+            IconButton(
+              tooltip: t('edit_item'),
+              onPressed: () => _editSaleItems(sale),
+              icon: Icon(Icons.edit_rounded, color: p.textSecondary),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Selected customer — tap to change.
+                _customerCard(sale, money),
+                const SizedBox(height: 12),
+                Expanded(child: FadeSlide(child: receiptCard)),
+                const SizedBox(height: 12),
+                AccentButton(
+                  label: t('print_receipt'),
+                  icon: Icons.print_rounded,
+                  onPressed: () => _withReceiptDetails(
+                    () => PrintService.pickFormatAndPrintReceipt(
+                      context: context,
+                      shop:
+                          ref.read(shopSettingsProvider).valueOrNull ?? settings,
+                      sale: sale,
+                      money: money.format,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                AccentButton(
+                  label: t('send_receipt'),
+                  icon: Icons.ios_share_rounded,
+                  color: p.cardElevated,
+                  foreground: p.textPrimary,
+                  onPressed: () =>
+                      _withReceiptDetails(() => _sendReceipt(sale)),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => context.go('/inventory'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: p.textPrimary,
+                    side: BorderSide(color: p.stroke),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(t('done')),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          AccentButton(
-            label: t('send_receipt'),
-            icon: Icons.ios_share_rounded,
-            color: p.cardElevated,
-            foreground: p.textPrimary,
-            onPressed: () => _withReceiptDetails(() => _sendReceipt(sale)),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () => context.go('/inventory'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: p.textPrimary,
-              side: BorderSide(color: p.stroke),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: Text(t('done')),
-          ),
-        ],
+        ),
       ),
     );
   }

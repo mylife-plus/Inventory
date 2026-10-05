@@ -208,11 +208,12 @@ class PrintService {
                   textAlign: pw.TextAlign.center,
                   style: body(),
                 ),
-              pw.Text(
-                '${shop.zip} ${shop.city}'.trim(),
-                textAlign: pw.TextAlign.center,
-                style: body(),
-              ),
+              if ('${shop.zip} ${shop.city}'.trim().isNotEmpty)
+                pw.Text(
+                  '${shop.zip} ${shop.city}'.trim(),
+                  textAlign: pw.TextAlign.center,
+                  style: body(),
+                ),
               if (shop.phone.isNotEmpty)
                 pw.Text(
                   shop.phone,

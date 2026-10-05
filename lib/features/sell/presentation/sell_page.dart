@@ -1297,11 +1297,15 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
 enum _CustSort { name, recent }
 
 class SelectCustomerPage extends ConsumerStatefulWidget {
-  const SelectCustomerPage({super.key, this.checkout = false});
+  const SelectCustomerPage({super.key, this.checkout = false, this.saleId});
 
   /// When true, tapping a customer completes the sale.
   /// When false, only selects the customer and pops back to Sell.
   final bool checkout;
+
+  /// When set (from a receipt), picking re-assigns that sale's customer and
+  /// pops with `true`.
+  final String? saleId;
 
   @override
   ConsumerState<SelectCustomerPage> createState() => _SelectCustomerPageState();
@@ -1323,6 +1327,25 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
   Future<void> _onPick(Customer? customer) async {
     if (_busy) return;
     FocusScope.of(context).unfocus();
+
+    final saleId = widget.saleId;
+    if (saleId != null) {
+      setState(() => _busy = true);
+      try {
+        await ref
+            .read(salesProvider.notifier)
+            .updateSaleCustomer(saleId, customer);
+        if (mounted) context.pop(true);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('$e')));
+        }
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+      return;
+    }
 
     if (!widget.checkout) {
       if (customer == null) {
@@ -1539,7 +1562,7 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
                         key: ValueKey('pick-${c.id}'),
                         padding: const EdgeInsets.only(bottom: 8),
                         child: FadeSlide(
-                          child: _SelectCustomerTile(
+                          child: SelectCustomerTile(
                             customer: c,
                             money: money,
                             onTap: _busy ? () {} : () => _onPick(c),
@@ -1558,8 +1581,9 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
   }
 }
 
-class _SelectCustomerTile extends ConsumerStatefulWidget {
-  const _SelectCustomerTile({
+class SelectCustomerTile extends ConsumerStatefulWidget {
+  const SelectCustomerTile({
+    super.key,
     required this.customer,
     required this.money,
     required this.onTap,
@@ -1570,11 +1594,11 @@ class _SelectCustomerTile extends ConsumerStatefulWidget {
   final VoidCallback onTap;
 
   @override
-  ConsumerState<_SelectCustomerTile> createState() =>
-      _SelectCustomerTileState();
+  ConsumerState<SelectCustomerTile> createState() =>
+      SelectCustomerTileState();
 }
 
-class _SelectCustomerTileState extends ConsumerState<_SelectCustomerTile> {
+class SelectCustomerTileState extends ConsumerState<SelectCustomerTile> {
   late final Future<CustomerStats> _statsFuture;
 
   @override

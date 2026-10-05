@@ -145,6 +145,12 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
     return sale;
   }
 
+  Future<void> updateSaleCustomer(String saleId, Customer? customer) async {
+    await ref.read(saleRepositoryProvider).updateSaleCustomer(saleId, customer);
+    await refresh();
+    ref.invalidate(customersProvider);
+  }
+
   /// Items that just went below alert threshold (for UI snackbars).
   Future<List<InventoryItem>> lowStockAfterSale(List<SaleLine> lines) async {
     final low = <InventoryItem>[];
@@ -474,6 +480,21 @@ class SaleRepository {
       total: total,
       createdAt: now,
       lines: lines,
+    );
+  }
+
+  /// Change who a receipt belongs to (`null` / guest sentinel = Guest).
+  Future<void> updateSaleCustomer(String saleId, Customer? customer) async {
+    final db = await _db.database;
+    final isGuest = customer == null || customer.id == '__guest__';
+    await db.update(
+      'sales',
+      {
+        'customer_id': isGuest ? null : customer.id,
+        'customer_name': isGuest ? 'Guest' : customer.displayName,
+      },
+      where: 'id = ?',
+      whereArgs: [saleId],
     );
   }
 

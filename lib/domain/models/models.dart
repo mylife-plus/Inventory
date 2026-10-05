@@ -26,14 +26,9 @@ class ShopSettings extends Equatable {
   final bool setupComplete;
 
   /// True when shop header details are ready for receipts.
-  /// All visible receipt fields must be filled on first setup.
+  /// Only the company name is required (address, phone, VAT are optional).
   bool get hasReceiptDetails =>
-      setupComplete &&
-      companyName.trim().isNotEmpty &&
-      street.trim().isNotEmpty &&
-      zip.trim().isNotEmpty &&
-      city.trim().isNotEmpty &&
-      phone.trim().isNotEmpty;
+      setupComplete && companyName.trim().isNotEmpty;
 
   ShopSettings copyWith({
     String? companyName,

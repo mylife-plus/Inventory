@@ -131,6 +131,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/sell/customer',
         builder: (_, state) => SelectCustomerPage(
           checkout: state.uri.queryParameters['checkout'] == '1',
+          saleId: state.uri.queryParameters['saleId'],
         ),
       ),
       GoRoute(
