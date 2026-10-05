@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
@@ -10,6 +9,7 @@ import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
+import 'package:inventory_app/features/inventory/presentation/item_list_tools.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
@@ -329,9 +329,10 @@ class _SellPageState extends ConsumerState<SellPage> {
                       ],
                     ),
                   ),
+                  // Cancel · Delete (center) · Check
                   ConfirmCancelBar(
-                    confirmLabel: t('done'),
                     onCancel: () => Navigator.pop(ctx),
+                    onDelete: () => Navigator.pop(ctx, 0.0),
                     onConfirm: () => Navigator.pop(ctx, qty),
                   ),
                 ],
@@ -483,7 +484,6 @@ class _SellPageState extends ConsumerState<SellPage> {
                         key: ValueKey('cart-${line.itemId}'),
                         line: line.copyWith(photoPath: photo),
                         money: money,
-                        remaining: stock?.amount,
                         onEdit: () => _adjustCartQty(line),
                       );
                     },
@@ -495,24 +495,22 @@ class _SellPageState extends ConsumerState<SellPage> {
   }
 }
 
+/// Cart line — same card as Inventory (badge = quantity in cart, tap = edit).
 class _CartLineCard extends StatelessWidget {
   const _CartLineCard({
     super.key,
     required this.line,
     required this.money,
     required this.onEdit,
-    this.remaining,
   });
 
   final SaleLine line;
   final MoneyFormatter money;
   final VoidCallback onEdit;
-  final double? remaining;
 
   @override
   Widget build(BuildContext context) {
     final p = AppPalette.of(context);
-    final t = ProviderScope.containerOf(context).read(tProvider);
     final amountOnly = money.formatAmount(line.unitPrice);
 
     return MediaListCard(
@@ -521,105 +519,6 @@ class _CartLineCard extends StatelessWidget {
         path: line.photoPath,
         badge: formatQty(line.quantity),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 4, 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        line.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                          height: 1.2,
-                          color: p.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      PriceUnitLine(
-                        amount: amountOnly.trim(),
-                        symbol: money.symbol,
-                        unit: line.unit,
-                      ),
-                      if (remaining != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          '${t('amount')}: ${formatQty(remaining!)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: p.textMuted,
-                            fontSize: 11,
-                            height: 1.2,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
-                      child: CardTotalLine(
-                        value: money.format(line.lineTotal),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: t('edit_item'),
-              onPressed: onEdit,
-              icon: AppIcon(
-                AppAssets.edit,
-                size: 22,
-                color: p.fabBorder,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SellProductCard extends StatelessWidget {
-  const _SellProductCard({
-    required this.item,
-    required this.money,
-    required this.cartQty,
-    required this.maxQty,
-    required this.onAdd,
-    required this.onQty,
-  });
-
-  final InventoryItem item;
-  final MoneyFormatter money;
-  final double? cartQty;
-  final double maxQty;
-  final VoidCallback onAdd;
-  final ValueChanged<double> onQty;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = AppPalette.of(context);
-    final amountOnly = money.formatAmount(item.price);
-
-    return MediaListCard(
-      thumb: CardThumb(path: item.photoPath, badge: item.stockBadge),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
         child: Column(
@@ -631,7 +530,7 @@ class _SellProductCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  item.title,
+                  line.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -645,7 +544,7 @@ class _SellProductCard extends StatelessWidget {
                 PriceUnitLine(
                   amount: amountOnly.trim(),
                   symbol: money.symbol,
-                  unit: item.unit,
+                  unit: line.unit,
                 ),
               ],
             ),
@@ -654,39 +553,7 @@ class _SellProductCard extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerRight,
-                child: cartQty == null
-                    ? Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: onAdd,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: p.fabBorder,
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Text(
-                              'add',
-                              style: TextStyle(
-                                color: p.fabBorder,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    : QtyStepper(
-                        key: ValueKey('qty-${item.id}'),
-                        value: cartQty!,
-                        max: maxQty,
-                        onChanged: onQty,
-                      ),
+                child: CardTotalLine(value: money.format(line.lineTotal)),
               ),
             ),
           ],
@@ -696,6 +563,225 @@ class _SellProductCard extends StatelessWidget {
   }
 }
 
+/// Sell → Add items card — Inventory card layout; tap the card to add one,
+/// "add" button when not in the cart, otherwise quantity box + delete.
+class _SellProductCard extends StatelessWidget {
+  const _SellProductCard({
+    required this.item,
+    required this.money,
+    required this.cartQty,
+    required this.maxQty,
+    required this.addLabel,
+    required this.onAdd,
+    required this.onQty,
+  });
+
+  final InventoryItem item;
+  final MoneyFormatter money;
+  final double? cartQty;
+  final double maxQty;
+  final String addLabel;
+  final VoidCallback onAdd;
+  final ValueChanged<double> onQty;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    final amountOnly = money.formatAmount(item.price);
+    final inCart = cartQty != null;
+
+    return MediaListCard(
+      onTap: onAdd,
+      borderColor: inCart ? p.fabBorder : null,
+      thumb: CardThumb(path: item.photoPath, badge: item.stockBadge),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      height: 1.2,
+                      color: p.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  PriceUnitLine(
+                    amount: amountOnly.trim(),
+                    symbol: money.symbol,
+                    unit: item.unit,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: inCart
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _CartQtyBox(
+                          key: ValueKey('qty-${item.id}'),
+                          value: cartQty!,
+                          max: maxQty,
+                          onChanged: onQty,
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () {
+                            AppHaptics.light();
+                            onQty(0);
+                          },
+                          icon: Icon(
+                            Icons.delete_outline_rounded,
+                            color: p.danger,
+                            size: 22,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.only(right: 4, bottom: 2),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: onAdd,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: p.fabBorder,
+                                width: 1.2,
+                              ),
+                            ),
+                            child: Text(
+                              addLabel,
+                              style: TextStyle(
+                                color: p.fabBorder,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small editable quantity box (blue border) used on Sell → Add items.
+class _CartQtyBox extends StatefulWidget {
+  const _CartQtyBox({
+    super.key,
+    required this.value,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final double value;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_CartQtyBox> createState() => _CartQtyBoxState();
+}
+
+class _CartQtyBoxState extends State<_CartQtyBox> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: formatQty(widget.value));
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (!_focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _CartQtyBox old) {
+    super.didUpdateWidget(old);
+    if (!_focus.hasFocus && old.value != widget.value) {
+      _ctrl.text = formatQty(widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final v = double.tryParse(_ctrl.text.trim().replaceAll(',', '.'));
+    if (v == null) {
+      _ctrl.text = formatQty(widget.value);
+      return;
+    }
+    final next = v > widget.max ? widget.max : (v < 0 ? 0.0 : v);
+    _ctrl.text = formatQty(next);
+    if ((next - widget.value).abs() > 1e-9) widget.onChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    return SizedBox(
+      width: 48,
+      height: 32,
+      child: TextField(
+        controller: _ctrl,
+        focusNode: _focus,
+        textAlign: TextAlign.center,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _focus.unfocus(),
+        onTapOutside: (_) => _focus.unfocus(),
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 15,
+          color: p.textPrimary,
+        ),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: false,
+          contentPadding: const EdgeInsets.symmetric(vertical: 6),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: p.fabBorder, width: 1.2),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: p.fabBorder, width: 1.6),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class SellAddProductsPage extends ConsumerStatefulWidget {
   const SellAddProductsPage({super.key});
@@ -709,8 +795,13 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
   final _search = TextEditingController();
   String? _categoryFilter;
   bool _showSearch = false;
-  _SellAddSort _sort = _SellAddSort.name;
+  SortState<ItemSortKey> _sort = kDefaultItemSort;
   final Set<String> _collapsed = {};
+
+  /// Cart when the page opened — Cancel restores it.
+  late final List<SaleLine> _snapshot =
+      List<SaleLine>.from(ref.read(cartProvider));
+  bool _leaving = false;
 
   @override
   void dispose() {
@@ -719,343 +810,75 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
   }
 
   Future<void> _showSortSheet() async {
-    final t = ref.read(tProvider);
-    await showAppSheet<void>(
+    final picked = await showSortSheet<ItemSortKey>(
       context: context,
-      heightFactor: 0.48,
-      alignTop: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setModal) {
-            Widget row({
-              required String label,
-              required IconData icon,
-              required bool selected,
-              required IconData? directionIcon,
-              required VoidCallback onTap,
-            }) {
-              final p = AppPalette.of(ctx);
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    AppHaptics.selection();
-                    onTap();
-                    setModal(() {});
-                  },
-                  borderRadius: BorderRadius.circular(12),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: p.card,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: selected ? p.fabBorder : p.stroke,
-                        width: selected ? 1.4 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? p.fabBorder.withValues(alpha: 0.18)
-                                : p.cardElevated,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            icon,
-                            size: 20,
-                            color: selected ? p.fabBorder : p.textMuted,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                              color: p.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (selected && directionIcon != null) ...[
-                          Icon(
-                            directionIcon,
-                            size: 22,
-                            color: p.fabBorder,
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Icon(
-                          selected
-                              ? Icons.check_circle_rounded
-                              : Icons.circle_outlined,
-                          size: 22,
-                          color: selected ? p.fabBorder : p.textMuted,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            final nameSelected =
-                _sort == _SellAddSort.name || _sort == _SellAddSort.nameDesc;
-            final priceSelected = _sort == _SellAddSort.priceHigh ||
-                _sort == _SellAddSort.priceLow;
-            final stockSelected = _sort == _SellAddSort.stockHigh ||
-                _sort == _SellAddSort.stockLow;
-
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppSheetHeader(title: t('sort')),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        row(
-                          label: nameSelected && _sort == _SellAddSort.nameDesc
-                              ? t('sort_name_za')
-                              : t('sort_name_az'),
-                          icon: Icons.sort_by_alpha_rounded,
-                          selected: nameSelected,
-                          directionIcon: nameSelected
-                              ? (_sort == _SellAddSort.name
-                                  ? Icons.arrow_downward_rounded
-                                  : Icons.arrow_upward_rounded)
-                              : null,
-                          onTap: () {
-                            setState(() {
-                              if (_sort == _SellAddSort.name) {
-                                _sort = _SellAddSort.nameDesc;
-                              } else if (_sort == _SellAddSort.nameDesc) {
-                                _sort = _SellAddSort.name;
-                              } else {
-                                _sort = _SellAddSort.name;
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        row(
-                          label:
-                              priceSelected && _sort == _SellAddSort.priceLow
-                                  ? t('sort_lowest_price')
-                                  : t('sort_highest_price'),
-                          icon: Icons.payments_rounded,
-                          selected: priceSelected,
-                          directionIcon: priceSelected
-                              ? (_sort == _SellAddSort.priceHigh
-                                  ? Icons.arrow_downward_rounded
-                                  : Icons.arrow_upward_rounded)
-                              : null,
-                          onTap: () {
-                            setState(() {
-                              if (_sort == _SellAddSort.priceHigh) {
-                                _sort = _SellAddSort.priceLow;
-                              } else if (_sort == _SellAddSort.priceLow) {
-                                _sort = _SellAddSort.priceHigh;
-                              } else {
-                                _sort = _SellAddSort.priceHigh;
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        row(
-                          label:
-                              stockSelected && _sort == _SellAddSort.stockLow
-                                  ? t('sort_lowest_stock')
-                                  : t('sort_highest_stock'),
-                          icon: Icons.inventory_2_outlined,
-                          selected: stockSelected,
-                          directionIcon: stockSelected
-                              ? (_sort == _SellAddSort.stockHigh
-                                  ? Icons.arrow_downward_rounded
-                                  : Icons.arrow_upward_rounded)
-                              : null,
-                          onTap: () {
-                            setState(() {
-                              if (_sort == _SellAddSort.stockHigh) {
-                                _sort = _SellAddSort.stockLow;
-                              } else if (_sort == _SellAddSort.stockLow) {
-                                _sort = _SellAddSort.stockHigh;
-                              } else {
-                                _sort = _SellAddSort.stockHigh;
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        row(
-                          label: t('sort_most_recent'),
-                          icon: Icons.schedule_rounded,
-                          selected: _sort == _SellAddSort.recent,
-                          directionIcon: null,
-                          onTap: () {
-                            setState(() => _sort = _SellAddSort.recent);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      options: itemSortOptions(ref.read(tProvider)),
+      current: _sort,
+      defaultState: kDefaultItemSort,
     );
+    if (picked != null && mounted) setState(() => _sort = picked);
   }
 
   Future<void> _showFilterSheet() async {
-    final t = ref.read(tProvider);
     final cats = ref.read(categoriesProvider).valueOrNull ?? [];
     final items = ref.read(inventoryItemsProvider).valueOrNull ?? [];
-    final usedIds = items.map((i) => i.categoryId).whereType<String>().toSet();
-    final usedCats = cats.where((c) => usedIds.contains(c.id)).toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    var cat = _categoryFilter;
-    if (cat != null && cat != '__uncat__' && !usedIds.contains(cat)) {
-      cat = null;
-    }
-
-    final applied = await showAppSheet<bool>(
-      context: context,
-      heightFactor: 0.42,
-      alignTop: true,
-      builder: (ctx) {
-        final p = AppPalette.of(ctx);
-        return StatefulBuilder(
-          builder: (ctx, setModal) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppSheetHeader(title: t('filter')),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: Container(
-                    height: 52,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: p.bg,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: p.stroke),
-                    ),
-                    alignment: Alignment.center,
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String?>(
-                        isExpanded: true,
-                        value: cat,
-                        hint: Text(
-                          t('all_categories'),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: p.textMuted,
-                          ),
-                        ),
-                        icon: Icon(
-                          Icons.arrow_drop_down_rounded,
-                          color: p.textMuted,
-                        ),
-                        dropdownColor: p.cardElevated,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: p.textPrimary,
-                        ),
-                        items: [
-                          DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text(t('all_categories')),
-                          ),
-                          ...usedCats.map(
-                            (c) => DropdownMenuItem<String?>(
-                              value: c.id,
-                              child: Text(c.name),
-                            ),
-                          ),
-                        ],
-                        onChanged: (v) => setModal(() => cat = v),
-                      ),
-                    ),
-                  ),
-                ),
-                AppSheetActions(
-                  onReset: () {
-                    Navigator.pop(ctx);
-                    setState(() => _categoryFilter = null);
-                  },
-                  onApply: () => Navigator.pop(ctx, true),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    final picked = await showItemFilterSheet(
+      context,
+      t: ref.read(tProvider),
+      categories: usedCategories(cats, items),
+      current: _categoryFilter,
     );
-
-    if (applied == true && mounted) {
-      setState(() => _categoryFilter = cat);
+    if (picked != null && mounted) {
+      setState(() => _categoryFilter = picked.categoryId);
     }
   }
 
-  List<InventoryItem> _sorted(List<InventoryItem> items) {
-    final list = [...items];
-    switch (_sort) {
-      case _SellAddSort.recent:
-        list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      case _SellAddSort.name:
-        list.sort(
-            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-      case _SellAddSort.nameDesc:
-        list.sort(
-            (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()));
-      case _SellAddSort.priceHigh:
-        list.sort((a, b) => b.price.compareTo(a.price));
-      case _SellAddSort.priceLow:
-        list.sort((a, b) => a.price.compareTo(b.price));
-      case _SellAddSort.stockHigh:
-        list.sort((a, b) => b.amount.compareTo(a.amount));
-      case _SellAddSort.stockLow:
-        list.sort((a, b) => a.amount.compareTo(b.amount));
-    }
-    return list;
+  void _leave() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _leaving = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.pop();
+    });
   }
 
-  void _addItem(InventoryItem item) {
-    final cart = ref.read(cartProvider);
-    final inCart = cart
-        .where((l) => l.itemId == item.id)
-        .fold<double>(0, (s, l) => s + l.quantity);
+  void _cancel() {
+    ref.read(cartProvider.notifier).replaceAll(_snapshot);
+    _leave();
+  }
+
+  double _maxFor(InventoryItem item) {
     final bonus = (ref.read(editingSaleLinesProvider) ?? const [])
         .where((l) => l.itemId == item.id)
         .fold<double>(0, (s, l) => s + l.quantity);
-    final maxAllowed = item.amount + bonus;
-    if (inCart + 1 > maxAllowed + 1e-9) return;
+    return item.amount + bonus;
+  }
+
+  void _addItem(InventoryItem item) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final inCart = ref
+        .read(cartProvider)
+        .where((l) => l.itemId == item.id)
+        .fold<double>(0, (s, l) => s + l.quantity);
+    final maxAllowed = _maxFor(item);
+    if (inCart + 1 > maxAllowed + 1e-9) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Not enough stock for ${item.title} '
+              '(have ${formatQty(maxAllowed)})',
+            ),
+          ),
+        );
+      return;
+    }
+    AppHaptics.selection();
     ref.read(cartProvider.notifier).addItem(item);
   }
 
   void _setQty(InventoryItem item, double q) {
-    final bonus = (ref.read(editingSaleLinesProvider) ?? const [])
-        .where((l) => l.itemId == item.id)
-        .fold<double>(0, (s, l) => s + l.quantity);
-    final maxAllowed = item.amount + bonus;
+    final maxAllowed = _maxFor(item);
     final capped = q > maxAllowed ? maxAllowed : q;
     ref.read(cartProvider.notifier).setQty(item.id, capped);
   }
@@ -1071,178 +894,175 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
     );
     final cart = ref.watch(cartProvider);
     final itemsAsync = ref.watch(inventoryItemsProvider);
-    final catsAsync = ref.watch(categoriesProvider);
-    final editLines = ref.watch(editingSaleLinesProvider) ?? const [];
+    ref.watch(editingSaleLinesProvider);
     final cartQtyById = <String, double>{
       for (final l in cart) l.itemId: l.quantity,
     };
+    final cartTotal = cart.fold<double>(0, (s, l) => s + l.lineTotal);
+    final cartCount = cart.fold<double>(0, (s, l) => s + l.quantity);
 
-    double maxFor(InventoryItem item) {
-      final bonus = editLines
-          .where((l) => l.itemId == item.id)
-          .fold<double>(0, (s, l) => s + l.quantity);
-      return item.amount + bonus;
-    }
-
-    final cats = catsAsync.valueOrNull;
-    final items = itemsAsync.valueOrNull;
-    if (_categoryFilter != null &&
-        _categoryFilter != '__uncat__' &&
-        cats != null &&
-        items != null) {
-      final usedIds =
-          items.map((i) => i.categoryId).whereType<String>().toSet();
-      final stillValid = cats.any((c) => c.id == _categoryFilter) &&
-          usedIds.contains(_categoryFilter);
-      if (!stillValid) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _categoryFilter != null) {
-            setState(() => _categoryFilter = null);
-          }
-        });
-      }
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Text(t('add_items_sell')),
-        actions: [
-          IconButton(
-            tooltip: t('search'),
-            onPressed: () => setState(() => _showSearch = !_showSearch),
-            icon: Icon(
-              Icons.search_rounded,
-              color: _showSearch ? p.neon : p.textSecondary,
-            ),
-          ),
-          IconButton(
-            tooltip: t('filter'),
-            onPressed: _showFilterSheet,
-            icon: Icon(
-              Icons.filter_list_rounded,
-              color: _categoryFilter != null ? p.neon : p.textSecondary,
-            ),
-          ),
-          IconButton(
-            tooltip: t('sort'),
-            onPressed: _showSortSheet,
-            icon: Icon(
-              Icons.sort_rounded,
-              color: _sort != _SellAddSort.name ? p.neon : p.textSecondary,
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: ConfirmCancelBar(
-        confirmLabel: t('done'),
-        onCancel: () => context.pop(),
-        onConfirm: () => context.pop(),
-      ),
-      body: Column(
-        children: [
-          if (_showSearch)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: TextField(
-                controller: _search,
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: t('search'),
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  isDense: true,
+    return PopScope(
+      canPop: _leaving,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _cancel();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          centerTitle: true,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AppIcon(AppAssets.inventory, size: 24),
+              const SizedBox(width: 8),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(t('inventory')),
                 ),
               ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: ConfirmCancelBar(
+          onCancel: _cancel,
+          onConfirm: _leave,
+        ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Row(
+                children: [
+                  Text(
+                    t('total'),
+                    style: TextStyle(
+                      color: p.textSecondary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    t.tr('cart_items_count', {'qty': formatQty(cartCount)}),
+                    style: TextStyle(
+                      color: p.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    money.format(cartTotal),
+                    style: TextStyle(
+                      color: p.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          Expanded(
-            child: itemsAsync.when(
-              loading: () => const AppLoader(),
-              error: (e, _) => Center(child: Text('$e')),
-              data: (allItems) {
-                final q = _search.text.trim().toLowerCase();
-                final filtered = _sorted(
-                  allItems.where((item) {
-                    final matchQ =
-                        q.isEmpty || item.title.toLowerCase().contains(q);
-                    final matchC = _categoryFilter == null ||
-                        (_categoryFilter == '__uncat__'
-                            ? item.categoryId == null
-                            : item.categoryId == _categoryFilter);
-                    return matchQ && matchC;
-                  }).toList(),
-                );
-
-                if (filtered.isEmpty) {
-                  return EmptyState(
-                    icon: Icons.inventory_2_outlined,
-                    title: t('no_items'),
-                    subtitle: t('add_first_item'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: ListActionIconsRow(
+                onSort: _showSortSheet,
+                onFilter: _showFilterSheet,
+                onSearch: () => setState(() => _showSearch = !_showSearch),
+                sortActive: _sort != kDefaultItemSort,
+                filterActive: _categoryFilter != null,
+                searchActive:
+                    _showSearch || _search.text.trim().isNotEmpty,
+              ),
+            ),
+            if (_showSearch)
+              AppSearchField(
+                controller: _search,
+                hintText: t('search'),
+                onChanged: (_) => setState(() {}),
+                onDismiss: () {
+                  if (mounted) setState(() => _showSearch = false);
+                },
+              ),
+            Expanded(
+              child: itemsAsync.when(
+                loading: () => const AppLoader(),
+                error: (e, _) => Center(child: Text('$e')),
+                data: (allItems) {
+                  final q = _search.text.trim().toLowerCase();
+                  final filtered = sortItems(
+                    allItems.where((item) {
+                      final matchQ =
+                          q.isEmpty || item.title.toLowerCase().contains(q);
+                      final matchC = _categoryFilter == null ||
+                          item.categoryId == _categoryFilter;
+                      return matchQ && matchC;
+                    }).toList(),
+                    _sort,
                   );
-                }
 
-                final grouped = <String, List<InventoryItem>>{};
-                for (final item in filtered) {
-                  final key = item.categoryName ?? t('uncategorized');
-                  grouped.putIfAbsent(key, () => []).add(item);
-                }
-                final sortedEntries = grouped.entries.toList()
-                  ..sort((a, b) =>
-                      a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+                  if (filtered.isEmpty) {
+                    return EmptyState(
+                      icon: Icons.inventory_2_outlined,
+                      title: t('no_items'),
+                      subtitle: t('add_first_item'),
+                    );
+                  }
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  children: [
-                    ...sortedEntries.expand((entry) {
-                      final open = !_collapsed.contains(entry.key);
-                      return [
-                        SectionHeader(
-                          title: entry.key,
-                          expanded: open,
-                          onToggle: () => setState(() {
-                            if (open) {
-                              _collapsed.add(entry.key);
-                            } else {
-                              _collapsed.remove(entry.key);
-                            }
-                          }),
-                        ),
-                        if (open)
-                          ...entry.value.map(
-                            (item) => Padding(
-                              key: ValueKey('sell-add-${item.id}'),
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: _SellProductCard(
-                                item: item,
-                                money: money,
-                                cartQty: cartQtyById[item.id],
-                                maxQty: maxFor(item),
-                                onAdd: () => _addItem(item),
-                                onQty: (q) => _setQty(item, q),
+                  final grouped = <String, List<InventoryItem>>{};
+                  for (final item in filtered) {
+                    final key = item.categoryName ?? t('uncategorized');
+                    grouped.putIfAbsent(key, () => []).add(item);
+                  }
+                  final sortedEntries = grouped.entries.toList()
+                    ..sort((a, b) =>
+                        a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    children: [
+                      ...sortedEntries.expand((entry) {
+                        final open = !_collapsed.contains(entry.key);
+                        return [
+                          SectionHeader(
+                            title: entry.key,
+                            expanded: open,
+                            onToggle: () => setState(() {
+                              if (open) {
+                                _collapsed.add(entry.key);
+                              } else {
+                                _collapsed.remove(entry.key);
+                              }
+                            }),
+                          ),
+                          if (open)
+                            ...entry.value.map(
+                              (item) => Padding(
+                                key: ValueKey('sell-add-${item.id}'),
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _SellProductCard(
+                                  item: item,
+                                  money: money,
+                                  cartQty: cartQtyById[item.id],
+                                  maxQty: _maxFor(item),
+                                  addLabel: t('add').toLowerCase(),
+                                  onAdd: () => _addItem(item),
+                                  onQty: (q) => _setQty(item, q),
+                                ),
                               ),
                             ),
-                          ),
-                      ];
-                    }),
-                  ],
-                );
-              },
+                        ];
+                      }),
+                    ],
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
-}
-
-enum _SellAddSort {
-  name,
-  nameDesc,
-  priceHigh,
-  priceLow,
-  stockHigh,
-  stockLow,
-  recent,
 }
 
 class SellScannerPage extends ConsumerStatefulWidget {
@@ -1288,33 +1108,39 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
         .firstOrNull;
   }
 
+  /// Older labels with a link only encoded the URL (no item id). Match the
+  /// scanned URL against the items' saved label links.
+  Future<InventoryItem?> _resolveByLink(String raw) async {
+    final key = QrPayload.linkKey(raw);
+    if (key.isEmpty) return null;
+    final items = ref.read(inventoryItemsProvider).valueOrNull ??
+        await ref.read(inventoryRepositoryProvider).listItems();
+    final matches = items
+        .where((i) =>
+            (i.qrLink ?? '').trim().isNotEmpty &&
+            QrPayload.linkKey(i.qrLink!) == key)
+        .toList();
+    return matches.length == 1 ? matches.first : null;
+  }
+
   Future<void> _onDetect(String raw) async {
     if (_handling) return;
     final now = DateTime.now();
-    if (_lastRaw == raw &&
+    // The camera reports the same code many times per second while it stays
+    // in view: add it once, and again only after it left the view briefly.
+    final sameCode = _lastRaw == raw &&
         _lastScanAt != null &&
-        now.difference(_lastScanAt!) < const Duration(seconds: 2)) {
-      return;
-    }
-    _handling = true;
+        now.difference(_lastScanAt!) < const Duration(milliseconds: 1500);
     _lastRaw = raw;
     _lastScanAt = now;
+    if (sameCode) return;
+    _handling = true;
     try {
       final parsed = QrPayload.parse(raw);
-      if (parsed.kind != QrKind.item || parsed.id == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Unrecognized QR: ${raw.length > 40 ? '${raw.substring(0, 40)}…' : raw}',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
-      final item = await _resolveItem(parsed.id!);
+      final item = (parsed.kind == QrKind.item && parsed.id != null
+              ? await _resolveItem(parsed.id!)
+              : null) ??
+          await _resolveByLink(raw);
       if (item == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
