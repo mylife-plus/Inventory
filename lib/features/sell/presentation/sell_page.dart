@@ -910,7 +910,7 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          centerTitle: true,
+          titleSpacing: 16,
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

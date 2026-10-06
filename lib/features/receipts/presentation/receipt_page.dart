@@ -561,6 +561,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
+          titleSpacing: 16,
           title: Text(t('send_receipt')),
           actions: [
             IconButton(

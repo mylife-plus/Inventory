@@ -198,7 +198,11 @@ class AppTheme {
         foregroundColor: p.textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
-        centerTitle: true,
+        // Client feedback (Oct 6): titles are start-aligned and sit tight
+        // to the back/close button like a standard app bar title. Pages
+        // without a leading button set their own `titleSpacing`.
+        centerTitle: false,
+        titleSpacing: 0,
         iconTheme: IconThemeData(color: p.textSecondary),
         titleTextStyle: text.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
