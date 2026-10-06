@@ -14,6 +14,7 @@ import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
+import 'package:inventory_app/shared/widgets/print_preview_page.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -246,16 +247,33 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
       }
       final ready = bytes;
       setState(() => _busy = false);
-      // Persist in the background; don't delay the print sheet.
+      // Persist in the background; don't delay the print window.
       unawaited(_persist());
       debugPrint('QR label print tap: ${ready.length} bytes');
-      await PrintService.layoutQrLabelPdf(
-        bytes: ready,
-        title: _labelTitle,
-        subtitle: _labelSubtitle,
-        qrData: _qrData,
-        companyName: _companyName,
-        format: PrintService.qrLabelFormat,
+      // Snapshot the label so the print window shows/prints exactly this.
+      final title = _labelTitle;
+      final subtitle = _labelSubtitle;
+      final qrData = _qrData;
+      final company = _companyName;
+      // Dedicated print window (preview + Print → system print dialog).
+      // Same proven pipeline: PNG rasterized up front, onLayout only wraps.
+      await openPrintPage(
+        context,
+        title: ref.read(tProvider)('print_label'),
+        preview: (_) => PrintService.rasterQrLabelPng(
+          title: title,
+          subtitle: subtitle,
+          qrData: qrData,
+          companyName: company,
+        ),
+        onPrint: (_) => PrintService.layoutQrLabelPdf(
+          bytes: ready,
+          title: title,
+          subtitle: subtitle,
+          qrData: qrData,
+          companyName: company,
+          format: PrintService.qrLabelFormat,
+        ),
       );
     } catch (e, st) {
       debugPrint('Print label failed: $e\n$st');
