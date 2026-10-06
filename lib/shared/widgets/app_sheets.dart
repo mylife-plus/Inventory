@@ -610,7 +610,8 @@ class AppRadioRow<T> extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Shared sort sheet — identical on Inventory, Sell, Customers, Turnover,
 // Receipts. Each option has two directions toggled by a switch; the label
-// shows the active direction (no arrows / check marks). Reset + Sort buttons.
+// shows the active direction (no arrows / check marks). Tapping the field
+// selects it, tapping it again flips the switch. Reset + Sort buttons.
 // ---------------------------------------------------------------------------
 
 /// One sort criterion with two directions (e.g. Name A–Z / Name Z–A).
@@ -690,9 +691,18 @@ class _SortSheetBodyState<K> extends ConsumerState<_SortSheetBody<K>> {
       o.key: o.key == widget.current.key ? widget.current.reversed : false,
   };
 
+  /// Tapping the option field: the first tap selects the criterion, every
+  /// further tap on the already-selected field flips its direction (same as
+  /// tapping the toggle).
   void _select(K key) {
     AppHaptics.selection();
-    setState(() => _selected = key);
+    setState(() {
+      if (_selected == key) {
+        _reversed[key] = !(_reversed[key] ?? false);
+      } else {
+        _selected = key;
+      }
+    });
   }
 
   void _toggle(K key, bool value) {
