@@ -1201,7 +1201,8 @@ class CustomerListCard extends ConsumerWidget {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(6, 8, 10, 6),
+                // Same title-to-photo padding as the Inventory item card.
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

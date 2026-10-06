@@ -123,6 +123,9 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
       context,
       t: ref.read(tProvider),
       current: _filter,
+      customFieldLabels: customFieldLabels(
+        ref.read(customersProvider).valueOrNull ?? const [],
+      ),
     );
     if (picked != null && mounted) setState(() => _filter = picked);
   }
@@ -1500,8 +1503,9 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
             ),
             const SizedBox(height: 10),
           ],
+          // Empty custom fields are not shown on the profile.
           for (final f in c.customFields)
-            if (f.label.trim().isNotEmpty) ...[
+            if (f.label.trim().isNotEmpty && f.value.trim().isNotEmpty) ...[
               _CustomFieldRow(label: f.label, value: f.value),
               const SizedBox(height: 10),
             ],
@@ -1672,24 +1676,36 @@ class _CustomFieldRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: p.stroke),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // Same single-line layout/height as the contact rows above.
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-                color: p.textMuted,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
-                color: p.textPrimary,
+            Icon(kCustomFieldIcon, size: 26, color: p.neon),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '$label  ',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: p.textMuted,
+                      ),
+                    ),
+                    TextSpan(
+                      text: value,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: p.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -1909,7 +1925,8 @@ class _PurchaseLineCard extends ConsumerWidget {
         badge: badge,
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 10, 12, 8),
+        // Same title-to-photo padding as the Inventory item card.
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
