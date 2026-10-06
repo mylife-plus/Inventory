@@ -132,10 +132,9 @@ class _SellPageState extends ConsumerState<SellPage> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final sale = await ref.read(salesProvider.notifier).updateSaleLines(
-            saleId: saleId,
-            lines: lines,
-          );
+      final sale = await ref
+          .read(salesProvider.notifier)
+          .updateSaleLines(saleId: saleId, lines: lines);
       ref.read(cartProvider.notifier).clear();
       _clearEditState();
       ref.read(sellCustomerProvider.notifier).state = null;
@@ -144,9 +143,7 @@ class _SellPageState extends ConsumerState<SellPage> {
     } catch (e) {
       if (!mounted) return;
       final msg = e is StateError ? e.message : '$e';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -167,12 +164,12 @@ class _SellPageState extends ConsumerState<SellPage> {
 
     setState(() => _busy = true);
     try {
-      final sale = await ref.read(salesProvider.notifier).completeSale(
-            lines: lines,
-            customer: customer,
-          );
-      final low =
-          await ref.read(salesProvider.notifier).lowStockAfterSale(lines);
+      final sale = await ref
+          .read(salesProvider.notifier)
+          .completeSale(lines: lines, customer: customer);
+      final low = await ref
+          .read(salesProvider.notifier)
+          .lowStockAfterSale(lines);
       ref.read(cartProvider.notifier).clear();
       ref.read(sellCustomerProvider.notifier).state = null;
       _clearEditState();
@@ -188,11 +185,30 @@ class _SellPageState extends ConsumerState<SellPage> {
     } catch (e) {
       if (!mounted) return;
       final msg = e is StateError ? e.message : '$e';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Cancel. While editing a receipt this is a pure no-op on stock and on
+  /// the sale: nothing is written, the edit state is dropped and the user
+  /// returns to the unchanged receipt. Otherwise the cart is discarded.
+  void _cancel() {
+    if (_busy) return;
+    FocusScope.of(context).unfocus();
+    final editingId = ref.read(editingSaleIdProvider);
+    ref.read(cartProvider.notifier).clear();
+    ref.read(sellCustomerProvider.notifier).state = null;
+    _clearEditState();
+    if (editingId != null) {
+      context.go('/sell/receipt/$editingId');
+      return;
+    }
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/inventory');
     }
   }
 
@@ -365,132 +381,129 @@ class _SellPageState extends ConsumerState<SellPage> {
     );
     final total = cart.fold<double>(0, (s, l) => s + l.lineTotal);
     final qty = cart.fold<double>(0, (s, l) => s + l.quantity);
+    final editing = ref.watch(editingSaleIdProvider) != null;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          tooltip: t('qr_scanner'),
-          onPressed: _busy ? null : _openScanner,
-          icon: AppIcon(
-            AppAssets.qrScanner,
-            size: 26,
-            color: p.textSecondary,
-          ),
-        ),
-        centerTitle: true,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.shopping_cart_outlined,
-                size: 18, color: p.textSecondary),
-            const SizedBox(width: 8),
-            Text(t('sell_items')),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: t('add_items_sell'),
-            onPressed: _busy ? null : _showAddProductsSheet,
-            icon: Icon(
-              Icons.add_rounded,
-              size: 30,
+    // While editing a receipt, system back behaves exactly like Cancel so a
+    // stale edit session can never be applied to a later sale.
+    return PopScope(
+      canPop: !editing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _cancel();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: t('qr_scanner'),
+            onPressed: _busy ? null : _openScanner,
+            icon: AppIcon(
+              AppAssets.qrScanner,
+              size: 26,
               color: p.textSecondary,
             ),
           ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      bottomNavigationBar: ConfirmCancelBar(
-        confirmLabel: t('items_sold'),
-        onCancel: () {
-          if (_busy) return;
-          FocusScope.of(context).unfocus();
-          ref.read(cartProvider.notifier).clear();
-          ref.read(sellCustomerProvider.notifier).state = null;
-          _clearEditState();
-          if (context.canPop()) {
-            context.pop();
-          } else {
-            context.go('/inventory');
-          }
-        },
-        onConfirm: () {
-          if (_busy) return;
-          _goCheckout();
-        },
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
-              children: [
-                Text(
-                  t('total'),
-                  style: TextStyle(
-                    color: p.textSecondary,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  t.tr('cart_items_count', {'qty': formatQty(qty)}),
-                  style: TextStyle(
-                    color: p.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  money.format(total),
-                  style: TextStyle(
-                    color: p.textPrimary,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
+          centerTitle: true,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.shopping_cart_outlined,
+                size: 18,
+                color: p.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Text(t('sell_items')),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: t('add_items_sell'),
+              onPressed: _busy ? null : _showAddProductsSheet,
+              icon: Icon(Icons.add_rounded, size: 30, color: p.textSecondary),
             ),
-          ),
-          Expanded(
-            child: cart.isEmpty
-                ? GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _busy ? null : _showAddProductsSheet,
-                    child: EmptyState(
-                      icon: Icons.shopping_cart_outlined,
-                      title: t('add_items_sell'),
-                      subtitle: t('add_items_sell_sub'),
+            const SizedBox(width: 4),
+          ],
+        ),
+        bottomNavigationBar: ConfirmCancelBar(
+          confirmLabel: t('items_sold'),
+          onCancel: _cancel,
+          onConfirm: () {
+            if (_busy) return;
+            _goCheckout();
+          },
+        ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Row(
+                children: [
+                  Text(
+                    t('total'),
+                    style: TextStyle(
+                      color: p.textSecondary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 15,
                     ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    itemCount: cart.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final line = cart[i];
-                      final stock = (ref
-                                  .watch(inventoryItemsProvider)
-                                  .valueOrNull ??
-                              [])
-                          .where((it) => it.id == line.itemId)
-                          .firstOrNull;
-                      final photo =
-                          (line.photoPath != null && line.photoPath!.isNotEmpty)
-                              ? line.photoPath
-                              : stock?.photoPath;
-                      return _CartLineCard(
-                        key: ValueKey('cart-${line.itemId}'),
-                        line: line.copyWith(photoPath: photo),
-                        money: money,
-                        onEdit: () => _adjustCartQty(line),
-                      );
-                    },
                   ),
-          ),
-        ],
+                  const SizedBox(width: 8),
+                  Text(
+                    t.tr('cart_items_count', {'qty': formatQty(qty)}),
+                    style: TextStyle(
+                      color: p.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    money.format(total),
+                    style: TextStyle(
+                      color: p.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: cart.isEmpty
+                  ? GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _busy ? null : _showAddProductsSheet,
+                      child: EmptyState(
+                        icon: Icons.shopping_cart_outlined,
+                        title: t('add_items_sell'),
+                        subtitle: t('add_items_sell_sub'),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      itemCount: cart.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (_, i) {
+                        final line = cart[i];
+                        final stock =
+                            (ref.watch(inventoryItemsProvider).valueOrNull ??
+                                    [])
+                                .where((it) => it.id == line.itemId)
+                                .firstOrNull;
+                        final photo =
+                            (line.photoPath != null &&
+                                line.photoPath!.isNotEmpty)
+                            ? line.photoPath
+                            : stock?.photoPath;
+                        return _CartLineCard(
+                          key: ValueKey('cart-${line.itemId}'),
+                          line: line.copyWith(photoPath: photo),
+                          money: money,
+                          onEdit: () => _adjustCartQty(line),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -516,10 +529,7 @@ class _CartLineCard extends StatelessWidget {
 
     return MediaListCard(
       onTap: onEdit,
-      thumb: CardThumb(
-        path: line.photoPath,
-        badge: formatQty(line.quantity),
-      ),
+      thumb: CardThumb(path: line.photoPath, badge: formatQty(line.quantity)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
         child: Column(
@@ -591,43 +601,43 @@ class _SellProductCard extends StatelessWidget {
     final amountOnly = money.formatAmount(item.price);
     final inCart = cartQty != null;
 
+    // Same layout as the Inventory card (Figma): title + price top-left next
+    // to the photo, the add / quantity control bottom-right (where Total is).
     return MediaListCard(
       onTap: onAdd,
       borderColor: inCart ? p.fabBorder : null,
       thumb: CardThumb(path: item.photoPath, badge: item.stockBadge),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 18,
-                      height: 1.2,
-                      color: p.textPrimary,
-                    ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                    height: 1.2,
+                    color: p.textPrimary,
                   ),
-                  const SizedBox(height: 6),
-                  PriceUnitLine(
-                    amount: amountOnly.trim(),
-                    symbol: money.symbol,
-                    unit: item.unit,
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 6),
+                PriceUnitLine(
+                  amount: amountOnly.trim(),
+                  symbol: money.symbol,
+                  unit: item.unit,
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
             Align(
-              alignment: Alignment.bottomRight,
+              alignment: Alignment.centerRight,
               child: inCart
                   ? Row(
                       mainAxisSize: MainAxisSize.min,
@@ -638,22 +648,30 @@ class _SellProductCard extends StatelessWidget {
                           max: maxQty,
                           onChanged: onQty,
                         ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () {
-                            AppHaptics.light();
-                            onQty(0);
-                          },
-                          icon: Icon(
-                            Icons.delete_outline_rounded,
-                            color: p.danger,
-                            size: 22,
+                        const SizedBox(width: 6),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              AppHaptics.light();
+                              onQty(0);
+                            },
+                            child: SizedBox(
+                              width: 30,
+                              height: 30,
+                              child: Icon(
+                                Icons.delete_outline_rounded,
+                                color: p.danger,
+                                size: 22,
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     )
                   : Padding(
-                      padding: const EdgeInsets.only(right: 4, bottom: 2),
+                      padding: const EdgeInsets.only(bottom: 2),
                       child: Material(
                         color: Colors.transparent,
                         child: InkWell(
@@ -709,16 +727,33 @@ class _CartQtyBox extends StatefulWidget {
 }
 
 class _CartQtyBoxState extends State<_CartQtyBox> {
-  late final TextEditingController _ctrl =
-      TextEditingController(text: formatQty(widget.value));
+  late final TextEditingController _ctrl = TextEditingController(
+    text: formatQty(widget.value),
+  );
   final FocusNode _focus = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _focus.addListener(() {
-      if (!_focus.hasFocus) _commit();
+      if (_focus.hasFocus) {
+        // Typing replaces the old number: select everything on focus.
+        _selectAll();
+        // The tap that focused the field places the caret afterwards.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _focus.hasFocus) _selectAll();
+        });
+      } else {
+        _commit();
+      }
     });
+  }
+
+  void _selectAll() {
+    _ctrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _ctrl.text.length,
+    );
   }
 
   @override
@@ -759,6 +794,8 @@ class _CartQtyBoxState extends State<_CartQtyBox> {
         textAlign: TextAlign.center,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         textInputAction: TextInputAction.done,
+        // Runs after the tap positioned the caret → select all again.
+        onTap: _selectAll,
         onSubmitted: (_) => _focus.unfocus(),
         onTapOutside: (_) => _focus.unfocus(),
         style: TextStyle(
@@ -800,8 +837,9 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
   final Set<String> _collapsed = {};
 
   /// Cart when the page opened — Cancel restores it.
-  late final List<SaleLine> _snapshot =
-      List<SaleLine>.from(ref.read(cartProvider));
+  late final List<SaleLine> _snapshot = List<SaleLine>.from(
+    ref.read(cartProvider),
+  );
   bool _leaving = false;
 
   @override
@@ -919,7 +957,7 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
               Flexible(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Text(t('inventory')),
+                  child: Text(t('add_items')),
                 ),
               ),
             ],
@@ -972,8 +1010,7 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
                 onSearch: () => setState(() => _showSearch = !_showSearch),
                 sortActive: _sort != kDefaultItemSort,
                 filterActive: _categoryFilter != null,
-                searchActive:
-                    _showSearch || _search.text.trim().isNotEmpty,
+                searchActive: _showSearch || _search.text.trim().isNotEmpty,
               ),
             ),
             if (_showSearch)
@@ -995,7 +1032,8 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
                     allItems.where((item) {
                       final matchQ =
                           q.isEmpty || item.title.toLowerCase().contains(q);
-                      final matchC = _categoryFilter == null ||
+                      final matchC =
+                          _categoryFilter == null ||
                           item.categoryId == _categoryFilter;
                       return matchQ && matchC;
                     }).toList(),
@@ -1016,8 +1054,10 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
                     grouped.putIfAbsent(key, () => []).add(item);
                   }
                   final sortedEntries = grouped.entries.toList()
-                    ..sort((a, b) =>
-                        a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+                    ..sort(
+                      (a, b) =>
+                          a.key.toLowerCase().compareTo(b.key.toLowerCase()),
+                    );
 
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -1114,12 +1154,15 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
   Future<InventoryItem?> _resolveByLink(String raw) async {
     final key = QrPayload.linkKey(raw);
     if (key.isEmpty) return null;
-    final items = ref.read(inventoryItemsProvider).valueOrNull ??
+    final items =
+        ref.read(inventoryItemsProvider).valueOrNull ??
         await ref.read(inventoryRepositoryProvider).listItems();
     final matches = items
-        .where((i) =>
-            (i.qrLink ?? '').trim().isNotEmpty &&
-            QrPayload.linkKey(i.qrLink!) == key)
+        .where(
+          (i) =>
+              (i.qrLink ?? '').trim().isNotEmpty &&
+              QrPayload.linkKey(i.qrLink!) == key,
+        )
         .toList();
     return matches.length == 1 ? matches.first : null;
   }
@@ -1129,7 +1172,8 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
     final now = DateTime.now();
     // The camera reports the same code many times per second while it stays
     // in view: add it once, and again only after it left the view briefly.
-    final sameCode = _lastRaw == raw &&
+    final sameCode =
+        _lastRaw == raw &&
         _lastScanAt != null &&
         now.difference(_lastScanAt!) < const Duration(milliseconds: 1500);
     _lastRaw = raw;
@@ -1138,7 +1182,8 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
     _handling = true;
     try {
       final parsed = QrPayload.parse(raw);
-      final item = (parsed.kind == QrKind.item && parsed.id != null
+      final item =
+          (parsed.kind == QrKind.item && parsed.id != null
               ? await _resolveItem(parsed.id!)
               : null) ??
           await _resolveByLink(raw);
@@ -1154,17 +1199,8 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
       // Accumulate for multi-add; Done merges into cart.
       AppHaptics.medium();
       if (!mounted) return;
+      // Listed under the scanner right away (no snackbar over the list).
       setState(() => _pending.add(item));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '${item.title} (+${_pending.where((i) => i.id == item.id).length})',
-            ),
-            duration: const Duration(milliseconds: 900),
-          ),
-        );
-      }
     } finally {
       _handling = false;
     }
@@ -1177,119 +1213,293 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
 
   void _cancel() => context.pop();
 
+  /// Scanned items grouped by id (scan order kept) with their counts.
+  List<(InventoryItem, int)> get _grouped {
+    final order = <String>[];
+    final byId = <String, InventoryItem>{};
+    final counts = <String, int>{};
+    for (final item in _pending) {
+      if (!byId.containsKey(item.id)) order.add(item.id);
+      byId[item.id] = item;
+      counts[item.id] = (counts[item.id] ?? 0) + 1;
+    }
+    return [for (final id in order) (byId[id]!, counts[id]!)];
+  }
+
+  void _removeScanned(String itemId) {
+    AppHaptics.light();
+    setState(() => _pending.removeWhere((i) => i.id == itemId));
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = AppPalette.of(context);
     final t = ref.watch(tProvider);
     final count = _pending.length;
+    final grouped = _grouped;
+    final settings = ref.watch(shopSettingsProvider).valueOrNull;
+    final money = MoneyFormatter(
+      symbol: settings?.currencySymbol ?? '€',
+      decimalSeparator: settings?.decimalSeparator ?? ',',
+    );
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          MobileScanner(
-            controller: _scanner,
-            onDetect: (capture) {
-              final code = capture.barcodes
-                  .map((b) => b.rawValue)
-                  .whereType<String>()
-                  .firstOrNull;
-              if (code != null && code.isNotEmpty) {
-                _onDetect(code);
-              }
-            },
-            errorBuilder: (context, error) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'Camera error: ${error.errorCode}\nAllow camera access in Settings.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              );
-            },
-          ),
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: IconButton(
-                onPressed: _cancel,
-                icon: const Icon(Icons.close_rounded, color: Colors.white),
-              ),
-            ),
-          ),
-          if (count > 0)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 12, top: 8),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: p.neon.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '$count',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: t('close_scanner'),
+          onPressed: _cancel,
+          icon: const Icon(Icons.close_rounded),
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(AppAssets.qrScanner, size: 22, color: p.textSecondary),
+            const SizedBox(width: 8),
+            Text(t('qr_scanner')),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Client: the camera takes at most 1/3 of the page height; the
+            // scanned items list fills the rest.
+            final scannerHeight = constraints.maxHeight / 3;
+            final frame = (scannerHeight * 0.78).clamp(120.0, 240.0);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: SizedBox(
+                    height: scannerHeight - 4,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          const ColoredBox(color: Colors.black),
+                          MobileScanner(
+                            controller: _scanner,
+                            fit: BoxFit.cover,
+                            onDetect: (capture) {
+                              final code = capture.barcodes
+                                  .map((b) => b.rawValue)
+                                  .whereType<String>()
+                                  .firstOrNull;
+                              if (code != null && code.isNotEmpty) {
+                                _onDetect(code);
+                              }
+                            },
+                            errorBuilder: (context, error) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    'Camera error: ${error.errorCode}\nAllow camera access in Settings.',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          IgnorePointer(
+                            child: Center(
+                              child: Container(
+                                width: frame,
+                                height: frame,
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: p.neon, width: 2.5),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          IgnorePointer(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final side = (constraints.biggest.shortestSide * 0.62)
-                      .clamp(180.0, 280.0);
-                  return Container(
-                    width: side,
-                    height: side,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: p.neon, width: 2.5),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          Positioned(
-            left: 18,
-            right: 18,
-            bottom: 32,
-            child: SafeArea(
-              child: Row(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                  child: Row(
+                    children: [
+                      Text(
+                        t('scanned_items'),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          color: p.textPrimary,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (count > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: p.neon.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: TextStyle(
+                              color: p.neon,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: grouped.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.qr_code_scanner_rounded,
+                                  size: 36,
+                                  color: p.textMuted,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  t('scan_items_hint'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: p.textMuted),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                          itemCount: grouped.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) {
+                            final (item, n) = grouped[i];
+                            return FadeSlide(
+                              key: ValueKey('scanned-${item.id}'),
+                              child: _ScannedItemCard(
+                                item: item,
+                                count: n,
+                                money: money,
+                                onRemove: () => _removeScanned(item.id),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: AccentButton(
+                          label: t('close_scanner'),
+                          color: p.cardElevated,
+                          foreground: p.textPrimary,
+                          onPressed: _cancel,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: AccentButton(
+                          label: count > 0
+                              ? '${t('done')} ($count)'
+                              : t('done'),
+                          onPressed: _done,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Scanned item row under the camera — same card as the cart / inventory.
+class _ScannedItemCard extends StatelessWidget {
+  const _ScannedItemCard({
+    required this.item,
+    required this.count,
+    required this.money,
+    required this.onRemove,
+  });
+
+  final InventoryItem item;
+  final int count;
+  final MoneyFormatter money;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    return MediaListCard(
+      thumb: CardThumb(path: item.photoPath, badge: '$count'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 4, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: AccentButton(
-                      label: t('close_scanner'),
-                      color: p.cardElevated,
-                      foreground: p.textPrimary,
-                      onPressed: _cancel,
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      height: 1.2,
+                      color: p.textPrimary,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: AccentButton(
-                      label: count > 0 ? '${t('done')} ($count)' : t('done'),
-                      onPressed: _done,
+                  const SizedBox(height: 6),
+                  PriceUnitLine(
+                    amount: money.formatAmount(item.price).trim(),
+                    symbol: money.symbol,
+                    unit: item.unit,
+                  ),
+                  const Spacer(),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: CardTotalLine(
+                        value: money.format(item.price * count),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: onRemove,
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                color: p.danger,
+                size: 22,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1368,8 +1578,9 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
         if (mounted) context.pop(true);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$e')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('$e')));
         }
       } finally {
         if (mounted) setState(() => _busy = false);
@@ -1404,14 +1615,16 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
       final ready = await ensureShopReceiptDetails(context, ref);
       if (!ready || !mounted) return;
 
-      final sale = await ref.read(salesProvider.notifier).completeSale(
-            lines: lines,
-            customer: customer,
-          );
-      final low =
-          await ref.read(salesProvider.notifier).lowStockAfterSale(lines);
+      final sale = await ref
+          .read(salesProvider.notifier)
+          .completeSale(lines: lines, customer: customer);
+      final low = await ref
+          .read(salesProvider.notifier)
+          .lowStockAfterSale(lines);
       ref.read(cartProvider.notifier).clear();
       ref.read(sellCustomerProvider.notifier).state = null;
+      ref.read(editingSaleIdProvider.notifier).state = null;
+      ref.read(editingSaleLinesProvider.notifier).state = null;
       if (!mounted) return;
       context.go('/sell/receipt/${sale.id}');
       if (low.isNotEmpty) {
@@ -1420,14 +1633,11 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
     } catch (e) {
       if (!mounted) return;
       final msg = e is StateError ? e.message : '$e';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -1488,9 +1698,11 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
                 }
                 final filtered = sortCustomers(
                   list
-                      .where((c) =>
-                          _filter.matches(c, _stats[c.id]) &&
-                          customerMatchesQuery(c, q))
+                      .where(
+                        (c) =>
+                            _filter.matches(c, _stats[c.id]) &&
+                            customerMatchesQuery(c, q),
+                      )
                       .toList(),
                   _sort,
                   _stats,
@@ -1549,8 +1761,7 @@ class SelectCustomerTile extends ConsumerStatefulWidget {
   final bool contactsInteractive;
 
   @override
-  ConsumerState<SelectCustomerTile> createState() =>
-      SelectCustomerTileState();
+  ConsumerState<SelectCustomerTile> createState() => SelectCustomerTileState();
 }
 
 class SelectCustomerTileState extends ConsumerState<SelectCustomerTile> {
@@ -1559,8 +1770,9 @@ class SelectCustomerTileState extends ConsumerState<SelectCustomerTile> {
   @override
   void initState() {
     super.initState();
-    _statsFuture =
-        ref.read(customerRepositoryProvider).stats(widget.customer.id);
+    _statsFuture = ref
+        .read(customerRepositoryProvider)
+        .stats(widget.customer.id);
   }
 
   @override
