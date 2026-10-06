@@ -1560,6 +1560,9 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
       context,
       t: ref.read(tProvider),
       current: _filter,
+      customFieldLabels: customFieldLabels(
+        ref.read(customersProvider).valueOrNull ?? const [],
+      ),
     );
     if (picked != null && mounted) setState(() => _filter = picked);
   }
