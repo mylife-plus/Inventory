@@ -209,7 +209,8 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
       photoPath: _photoPath,
       alertEnabled: _alertEnabled,
       alertAmount:
-          double.tryParse(_alertAmount.text.replaceAll(',', '.')) ?? 0,
+          double.tryParse(_alertAmount.text.replaceAll(',', '.').trim()) ??
+              (_alertEnabled ? 1 : 0),
       qrTitle: qrTitle,
       qrSubtitle: qrSubtitle,
       qrLink: latest?.qrLink ?? _qrLink,
@@ -516,19 +517,42 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
                       style: TextStyle(fontSize: 12.5, color: p.textMuted),
                     ),
                     value: _alertEnabled,
-                    onChanged: (v) => setState(() => _alertEnabled = v),
+                    onChanged: (v) => setState(() {
+                      _alertEnabled = v;
+                      // Activating starts at 1 unless a level is already set.
+                      final current = double.tryParse(
+                        _alertAmount.text.replaceAll(',', '.').trim(),
+                      );
+                      if (v && (current == null || current <= 0)) {
+                        _alertAmount.text = '1';
+                      }
+                    }),
                     secondary: Icon(Icons.notifications_active_rounded,
                         color: p.neon),
                   ),
                   if (_alertEnabled)
-                    TextFormField(
-                      controller: _alertAmount,
-                      decoration: InputDecoration(
-                        labelText: t('amount'),
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
-                      textInputAction: TextInputAction.done,
+                    // Rebuild only the field when the unit changes so the
+                    // suffix always shows the item's current unit.
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _unit,
+                      builder: (context, unitValue, _) {
+                        final unit = unitValue.text.trim();
+                        return TextFormField(
+                          controller: _alertAmount,
+                          decoration: InputDecoration(
+                            labelText: t('amount'),
+                            suffixText: unit.isEmpty ? null : unit,
+                            suffixStyle: TextStyle(
+                              color: p.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          textInputAction: TextInputAction.done,
+                        );
+                      },
                     ),
                 ],
               ),
