@@ -10,6 +10,7 @@ import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 
@@ -440,18 +441,58 @@ class PrintService {
     return doc.save();
   }
 
-  static Future<void> printReceipt({
+  /// Receipt paper sizes offered on the print window. Roll widths are
+  /// continuous (infinite height); the page grows to fit the receipt.
+  static const String receiptPaperA4 = 'a4';
+  static const String receiptPaperRoll80 = 'roll80';
+  static const String receiptPaperRoll58 = 'roll57';
+  static const String _receiptPaperPrefKey = 'receipt_paper';
+
+  static PdfPageFormat receiptFormatFor(String id) => switch (id) {
+        receiptPaperRoll80 => PdfPageFormat.roll80,
+        receiptPaperRoll58 => PdfPageFormat.roll57,
+        _ => PdfPageFormat.a4,
+      };
+
+  static Future<String> lastReceiptPaper() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_receiptPaperPrefKey) ?? receiptPaperA4;
+    } catch (_) {
+      return receiptPaperA4;
+    }
+  }
+
+  static Future<void> saveReceiptPaper(String id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_receiptPaperPrefKey, id);
+    } catch (e) {
+      debugPrint('Saving receipt paper failed: $e');
+    }
+  }
+
+  /// Builds the receipt PDF. Roll formats come back with a finite page height
+  /// fitted to the content (see [receiptPdfFormat]). The QR is only drawn when
+  /// the shop has a QR-Link ([ShopSettings.receiptQrData]).
+  static Future<({Uint8List bytes, PdfPageFormat format})> buildReceiptPdf({
     required ShopSettings shop,
     required Sale sale,
     required String Function(num) money,
     PdfPageFormat format = PdfPageFormat.roll80,
   }) async {
     final fonts = await _fonts();
+    final roll = !format.height.isFinite;
+    final qrData = shop.receiptQrData;
+    // Thermal rolls need small type; A4 gets readable sizes.
+    final scale = roll ? 1.0 : 1.35;
     final doc = pw.Document();
     doc.addPage(
       pw.Page(
         pageFormat: format,
-        margin: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        margin: roll
+            ? const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6)
+            : const pw.EdgeInsets.symmetric(horizontal: 56, vertical: 48),
         theme: pw.ThemeData.withFont(
           base: fonts.regular,
           bold: fonts.bold,
@@ -461,10 +502,10 @@ class PrintService {
         ),
         build: (context) {
           pw.TextStyle body([double size = 8]) =>
-              pw.TextStyle(font: fonts.regular, fontSize: size);
+              pw.TextStyle(font: fonts.regular, fontSize: size * scale);
           pw.TextStyle bold([double size = 9]) => pw.TextStyle(
                 font: fonts.bold,
-                fontSize: size,
+                fontSize: size * scale,
               );
 
           return pw.Column(
@@ -567,16 +608,18 @@ class PrintService {
                 ],
               ),
               pw.SizedBox(height: 8),
-              pw.Center(
-                child: pw.BarcodeWidget(
-                  barcode: pw.Barcode.qrCode(),
-                  data: 'https://tocca.io/r/${sale.id}',
-                  width: 72,
-                  height: 72,
-                  drawText: false,
+              if (qrData != null) ...[
+                pw.Center(
+                  child: pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: qrData,
+                    width: 72 * scale,
+                    height: 72 * scale,
+                    drawText: false,
+                  ),
                 ),
-              ),
-              pw.SizedBox(height: 6),
+                pw.SizedBox(height: 6),
+              ],
               pw.Text(
                 'Thank you',
                 textAlign: pw.TextAlign.center,
@@ -589,23 +632,59 @@ class PrintService {
     );
 
     final bytes = await doc.save();
+    // pdf resolves an infinite roll height to the laid-out content height.
+    var pageFormat = format;
+    final pages = doc.document.pdfPageList.pages;
+    if (pages.isNotEmpty) pageFormat = pages.first.pageFormat;
+    if (!pageFormat.height.isFinite || pageFormat.height <= 0) {
+      pageFormat = PdfPageFormat(format.width, 200 * PdfPageFormat.mm);
+    }
+    debugPrint(
+      'Receipt PDF: ${bytes.length} bytes '
+      '(${pageFormat.width.toStringAsFixed(0)}x${pageFormat.height.toStringAsFixed(0)}pt, '
+      'qr=${qrData != null})',
+    );
+    return (bytes: bytes, format: pageFormat);
+  }
+
+  /// PNG preview of page 1 of [pdf] (~[targetWidthPx] wide) for the print
+  /// window. Never called from inside `onLayout`.
+  static Future<Uint8List> rasterPreviewPng(
+    Uint8List pdf,
+    PdfPageFormat format, {
+    double targetWidthPx = 900,
+  }) async {
+    final dpi = (targetWidthPx / (format.width / PdfPageFormat.inch))
+        .clamp(72.0, 300.0);
+    final page = await Printing.raster(pdf, pages: const [0], dpi: dpi).first;
+    return page.toPng();
+  }
+
+  /// Opens the system print dialog for a receipt built by [buildReceiptPdf].
+  /// Bytes are prebuilt; `onLayout` only returns them (no nested work).
+  static Future<void> layoutReceiptPdf({
+    required Uint8List bytes,
+    required PdfPageFormat format,
+    required Sale sale,
+  }) async {
+    if (bytes.length < _minPdfBytes ||
+        String.fromCharCodes(bytes.take(5)) != '%PDF-') {
+      throw StateError('Receipt PDF invalid (${bytes.length} bytes)');
+    }
+    final bool android = !kIsWeb && Platform.isAndroid;
+    // Android: hint a predefined media size (custom sizes map to
+    // UNKNOWN_PORTRAIT on some OEM print UIs); the system scales the page and
+    // thermal print services still offer their roll widths.
+    final hint = android
+        ? (format.width > PdfPageFormat.a5.width
+            ? PdfPageFormat.a4
+            : PdfPageFormat.a6)
+        : format;
     await Printing.layoutPdf(
       onLayout: (_) async => bytes,
       name: 'Receipt-${sale.id.substring(0, 8)}',
-    );
-  }
-
-  static Future<void> pickFormatAndPrintReceipt({
-    required BuildContext context,
-    required ShopSettings shop,
-    required Sale sale,
-    required String Function(num) money,
-  }) async {
-    await printReceipt(
-      shop: shop,
-      sale: sale,
-      money: money,
-      format: PdfPageFormat.a4,
+      format: hint,
+      dynamicLayout: !android,
     );
   }
 }

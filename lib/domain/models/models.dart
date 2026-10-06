@@ -13,6 +13,7 @@ class ShopSettings extends Equatable {
     this.currencySymbol = '€',
     this.decimalSeparator = ',',
     this.setupComplete = false,
+    this.receiptQrLink = '',
   });
 
   final String companyName;
@@ -24,6 +25,15 @@ class ShopSettings extends Equatable {
   final String currencySymbol;
   final String decimalSeparator;
   final bool setupComplete;
+
+  /// Link encoded in the receipt QR ("QR-Link"). Empty = no QR on receipts.
+  final String receiptQrLink;
+
+  /// Trimmed [receiptQrLink], or `null` when no QR should be shown.
+  String? get receiptQrData {
+    final v = receiptQrLink.trim();
+    return v.isEmpty ? null : v;
+  }
 
   /// True when shop header details are ready for receipts.
   /// Only the company name is required (address, phone, VAT are optional).
@@ -40,6 +50,7 @@ class ShopSettings extends Equatable {
     String? currencySymbol,
     String? decimalSeparator,
     bool? setupComplete,
+    String? receiptQrLink,
   }) {
     return ShopSettings(
       companyName: companyName ?? this.companyName,
@@ -51,6 +62,7 @@ class ShopSettings extends Equatable {
       currencySymbol: currencySymbol ?? this.currencySymbol,
       decimalSeparator: decimalSeparator ?? this.decimalSeparator,
       setupComplete: setupComplete ?? this.setupComplete,
+      receiptQrLink: receiptQrLink ?? this.receiptQrLink,
     );
   }
 
@@ -66,6 +78,7 @@ class ShopSettings extends Equatable {
         'currency_symbol': currencySymbol,
         'decimal_separator': decimalSeparator,
         'setup_complete': setupComplete ? 1 : 0,
+        'receipt_qr_link': receiptQrLink,
       };
 
   factory ShopSettings.fromMap(Map<String, Object?> map) {
@@ -79,6 +92,7 @@ class ShopSettings extends Equatable {
       currencySymbol: (map['currency_symbol'] as String?) ?? '€',
       decimalSeparator: (map['decimal_separator'] as String?) == '.' ? '.' : ',',
       setupComplete: (map['setup_complete'] as int?) == 1,
+      receiptQrLink: (map['receipt_qr_link'] as String?) ?? '',
     );
   }
 
@@ -93,6 +107,7 @@ class ShopSettings extends Equatable {
         currencySymbol,
         decimalSeparator,
         setupComplete,
+        receiptQrLink,
       ];
 }
 

@@ -37,7 +37,8 @@ class AppDatabase {
             vat_rate REAL NOT NULL DEFAULT 0,
             currency_symbol TEXT NOT NULL DEFAULT '€',
             decimal_separator TEXT NOT NULL DEFAULT ',',
-            setup_complete INTEGER NOT NULL DEFAULT 0
+            setup_complete INTEGER NOT NULL DEFAULT 0,
+            receipt_qr_link TEXT NOT NULL DEFAULT ''
           )
         ''');
         await db.insert('shop_settings', {
@@ -119,6 +120,7 @@ class AppDatabase {
         ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
+        await _ensureShopSettingsColumns(db);
         await _ensureCustomerColumns(db);
         await _ensureInventoryItemColumns(db);
         if (oldVersion < 8) {
@@ -132,6 +134,7 @@ class AppDatabase {
       },
       onOpen: (db) async {
         // Repair schemas when version jumped without applying ALTERs.
+        await _ensureShopSettingsColumns(db);
         await _ensureCustomerColumns(db);
         await _ensureInventoryItemColumns(db);
         await _relinkOrphanedSales(db);
@@ -163,6 +166,20 @@ class AppDatabase {
     ''');
   }
 
+
+  /// Idempotent: add any missing shop settings columns (safe for old installs
+  /// and restored backups).
+  static Future<void> _ensureShopSettingsColumns(Database db) async {
+    final rows = await db.rawQuery('PRAGMA table_info(shop_settings)');
+    final existing = <String>{
+      for (final r in rows) (r['name'] as String?) ?? '',
+    };
+    if (!existing.contains('receipt_qr_link')) {
+      await db.execute(
+        "ALTER TABLE shop_settings ADD COLUMN receipt_qr_link TEXT NOT NULL DEFAULT ''",
+      );
+    }
+  }
 
   /// Idempotent: add any missing inventory QR columns (safe for old installs).
   static Future<void> _ensureInventoryItemColumns(Database db) async {

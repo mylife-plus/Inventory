@@ -1,9 +1,11 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/print/print_service.dart';
-import 'package:inventory_app/core/qr/qr_payload.dart';
 import 'package:inventory_app/core/receipts/receipt_details_gate.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/contact_launch.dart';
@@ -16,6 +18,8 @@ import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
+import 'package:inventory_app/shared/widgets/print_preview_page.dart';
+import 'package:pdf/pdf.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:inventory_app/core/share/share_origin.dart';
@@ -151,24 +155,8 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                 child: ListView(
                   shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  // Only the contact options — no customer card here.
                   children: [
-                    if (customer != null) ...[
-                      CustomerListCard(
-                        name: customer.displayName,
-                        money: money,
-                        photoPath: customer.photoPath,
-                        contacts: contacts,
-                        onContactTap: (contact) async {
-                          Navigator.pop(ctx);
-                          await launchContactWithMessage(
-                            contact,
-                            body,
-                            subject: t('receipt'),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                    ],
                     if (contacts.isEmpty)
                       ListTile(
                         shape: RoundedRectangleBorder(
@@ -244,6 +232,78 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     );
   }
 
+  /// Opens the dedicated print window: paper choice (A4 or 80/58 mm
+  /// receipt roll for thermal printers), preview, Print → system dialog.
+  Future<void> _printReceipt(
+    Sale sale,
+    MoneyFormatter money,
+    ShopSettings fallback,
+  ) async {
+    final t = ref.read(tProvider);
+    final shop = ref.read(shopSettingsProvider).valueOrNull ?? fallback;
+    final initial = await PrintService.lastReceiptPaper();
+    if (!mounted) return;
+    final papers = [
+      PrintPaperChoice(
+        id: PrintService.receiptPaperA4,
+        label: t('paper_a4'),
+        subtitle: t('paper_a4_sub'),
+        icon: Icons.description_rounded,
+        format: PrintService.receiptFormatFor(PrintService.receiptPaperA4),
+      ),
+      PrintPaperChoice(
+        id: PrintService.receiptPaperRoll80,
+        label: t('paper_roll80'),
+        subtitle: t('paper_roll80_sub'),
+        icon: Icons.receipt_long_rounded,
+        format: PrintService.receiptFormatFor(PrintService.receiptPaperRoll80),
+      ),
+      PrintPaperChoice(
+        id: PrintService.receiptPaperRoll58,
+        label: t('paper_roll58'),
+        subtitle: t('paper_roll58_sub'),
+        icon: Icons.receipt_rounded,
+        format: PrintService.receiptFormatFor(PrintService.receiptPaperRoll58),
+      ),
+    ];
+    // One build per paper size, shared by preview and print.
+    final built = <String, Future<({Uint8List bytes, PdfPageFormat format})>>{};
+    Future<({Uint8List bytes, PdfPageFormat format})> build(
+      PrintPaperChoice paper,
+    ) {
+      return built.putIfAbsent(
+        paper.id,
+        () => PrintService.buildReceiptPdf(
+          shop: shop,
+          sale: sale,
+          money: money.format,
+          format: paper.format,
+        ),
+      );
+    }
+
+    await openPrintPage(
+      context,
+      title: t('print_receipt'),
+      papers: papers,
+      initialPaperId: initial,
+      onPaperChanged: (paper) =>
+          unawaited(PrintService.saveReceiptPaper(paper.id)),
+      preview: (paper) async {
+        final pdf = await build(paper ?? papers.first);
+        return PrintService.rasterPreviewPng(pdf.bytes, pdf.format);
+      },
+      onPrint: (paper) async {
+        final pdf = await build(paper ?? papers.first);
+        await PrintService.layoutReceiptPdf(
+          bytes: pdf.bytes,
+          format: pdf.format,
+          sale: sale,
+        );
+      },
+    );
+  }
+
   void _leave() {
     if (context.canPop()) {
       context.pop();
@@ -281,6 +341,8 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       key: ValueKey('receipt-cust-${customer.id}-${sale.total}'),
       customer: customer,
       money: money,
+      // Client: contact icons here are informational only (no redirect).
+      contactsInteractive: false,
       onTap: () => _changeCustomer(sale),
     );
   }
@@ -405,7 +467,8 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       );
     }
 
-    final receiptQr = QrPayload.encodeReceipt(sale.id);
+    // Receipt QR opens the shop's QR-Link; no link → no QR at all.
+    final receiptQr = settings.receiptQrData;
 
     final zipCity = '${settings.zip} ${settings.city}'.trim();
 
@@ -533,14 +596,16 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                   },
                 ),
                 const SizedBox(height: 18),
-                Center(
-                  child: QrImageView(
-                    data: receiptQr,
-                    size: 140,
-                    backgroundColor: Colors.white,
+                if (receiptQr != null) ...[
+                  Center(
+                    child: QrImageView(
+                      data: receiptQr,
+                      size: 140,
+                      backgroundColor: Colors.white,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
+                  const SizedBox(height: 6),
+                ],
                 Text(
                   t('thank_you'),
                   textAlign: TextAlign.center,
@@ -587,13 +652,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                   label: t('print_receipt'),
                   icon: Icons.print_rounded,
                   onPressed: () => _withReceiptDetails(
-                    () => PrintService.pickFormatAndPrintReceipt(
-                      context: context,
-                      shop:
-                          ref.read(shopSettingsProvider).valueOrNull ?? settings,
-                      sale: sale,
-                      money: money.format,
-                    ),
+                    () => _printReceipt(sale, money, settings),
                   ),
                 ),
                 const SizedBox(height: 8),

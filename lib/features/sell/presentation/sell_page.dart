@@ -1538,11 +1538,15 @@ class SelectCustomerTile extends ConsumerStatefulWidget {
     required this.customer,
     required this.money,
     required this.onTap,
+    this.contactsInteractive = true,
   });
 
   final Customer customer;
   final MoneyFormatter money;
   final VoidCallback onTap;
+
+  /// False on the Send Receipt page: icons are shown but don't launch apps.
+  final bool contactsInteractive;
 
   @override
   ConsumerState<SelectCustomerTile> createState() =>
@@ -1570,6 +1574,7 @@ class SelectCustomerTileState extends ConsumerState<SelectCustomerTile> {
           stats: snap.data,
           photoPath: widget.customer.photoPath,
           contacts: widget.customer.allContacts,
+          contactsInteractive: widget.contactsInteractive,
           onTap: widget.onTap,
         );
       },

@@ -1125,6 +1125,7 @@ class CustomerListCard extends ConsumerWidget {
     this.onSubtitleTap,
     this.contacts = const [],
     this.onContactTap,
+    this.contactsInteractive = true,
   });
 
   final String name;
@@ -1146,6 +1147,9 @@ class CustomerListCard extends ConsumerWidget {
 
   /// Override default contact launch (e.g. attach receipt message).
   final ValueChanged<CustomerContact>? onContactTap;
+
+  /// False: contact icons are display-only (taps fall through to [onTap]).
+  final bool contactsInteractive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1227,9 +1231,12 @@ class CustomerListCard extends ConsumerWidget {
                                 if (i > 0) const SizedBox(width: 8),
                                 GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: () => openContact(contactIcons[i]),
-                                  onLongPress: () =>
-                                      copyContact(contactIcons[i]),
+                                  onTap: contactsInteractive
+                                      ? () => openContact(contactIcons[i])
+                                      : null,
+                                  onLongPress: contactsInteractive
+                                      ? () => copyContact(contactIcons[i])
+                                      : null,
                                   child: Padding(
                                     padding: const EdgeInsets.all(4),
                                     child: contactIcons[i].kind ==

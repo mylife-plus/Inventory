@@ -184,6 +184,29 @@ class SettingsPage extends ConsumerWidget {
                       onTap: () => context.push('/settings/receipt'),
                     ),
                     _SettingsRow(
+                      leading: Icon(Icons.qr_code_2_rounded,
+                          color: p.textPrimary, size: 22),
+                      title: t('qr_link'),
+                      trailing: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.sizeOf(context).width * 0.38,
+                        ),
+                        child: Text(
+                          s.receiptQrLink.trim().isEmpty
+                              ? t('not_set')
+                              : s.receiptQrLink.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: p.textPrimary.withValues(alpha: 0.72),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      onTap: () => _editQrLink(context, ref, s),
+                    ),
+                    _SettingsRow(
                       leading: Icon(Icons.description_rounded,
                           color: p.textPrimary, size: 22),
                       title: t('receipts'),
@@ -276,6 +299,63 @@ class SettingsPage extends ConsumerWidget {
     if (code != null) {
       await ref.read(appPrefsProvider.notifier).setLocale(code);
     }
+  }
+
+  /// Same stored value as the QR-Link field on the receipt details page.
+  Future<void> _editQrLink(
+    BuildContext context,
+    WidgetRef ref,
+    ShopSettings s,
+  ) async {
+    final t = ref.read(tProvider);
+    final controller = TextEditingController(text: s.receiptQrLink);
+    final result = await showAppSheet<String>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppSheetHeader(title: t('qr_link')),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      labelText: t('qr_link'),
+                      hintText: 'https://…',
+                      helperText: t('receipt_qr_link_helper'),
+                      helperMaxLines: 2,
+                    ),
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.done,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+                  ),
+                ),
+                AppSheetActions(
+                  applyLabel: t('done'),
+                  onReset: () => Navigator.pop(ctx, ''),
+                  onApply: () => Navigator.pop(ctx, controller.text.trim()),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    // Not disposed here: the sheet's closing animation may still use it.
+    if (result == null) return;
+    final current = await ref.read(shopRepositoryProvider).get();
+    await ref
+        .read(shopSettingsProvider.notifier)
+        .save(current.copyWith(receiptQrLink: result));
   }
 
   Future<void> _pickCurrency(
@@ -569,6 +649,7 @@ class _ReceiptDetailsSettingsPageState
   late TextEditingController _city;
   late TextEditingController _phone;
   late TextEditingController _vat;
+  late TextEditingController _qrLink;
   bool _ready = false;
   bool _saving = false;
 
@@ -604,6 +685,7 @@ class _ReceiptDetailsSettingsPageState
         ? '${s.vatRate.round()}%'
         : '${s.vatRate}%';
     _vat = TextEditingController(text: s.vatRate == 0 ? '' : vat);
+    _qrLink = TextEditingController(text: s.receiptQrLink);
     if (mounted) setState(() => _ready = true);
   }
 
@@ -617,6 +699,7 @@ class _ReceiptDetailsSettingsPageState
       _city.dispose();
       _phone.dispose();
       _vat.dispose();
+      _qrLink.dispose();
     }
     super.dispose();
   }
@@ -637,6 +720,7 @@ class _ReceiptDetailsSettingsPageState
               city: _city.text.trim(),
               phone: _phone.text.trim(),
               vatRate: double.tryParse(vatRaw) ?? 0,
+              receiptQrLink: _qrLink.text.trim(),
               setupComplete: true,
             ),
           );
@@ -764,7 +848,7 @@ class _ReceiptDetailsSettingsPageState
                       const InputDecoration(labelText: 'VAT Tax Rate'),
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  textInputAction: TextInputAction.done,
+                  textInputAction: TextInputAction.next,
                   validator: (v) {
                     // Optional — but must be a number when filled in.
                     if (v == null || v.trim().isEmpty) return null;
@@ -775,6 +859,20 @@ class _ReceiptDetailsSettingsPageState
                   },
                 ),
               ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _qrLink,
+              decoration: InputDecoration(
+                labelText: t('qr_link'),
+                hintText: 'https://…',
+                helperText: t('receipt_qr_link_helper'),
+                helperMaxLines: 2,
+              ),
+              keyboardType: TextInputType.url,
+              textInputAction: TextInputAction.done,
+              autocorrect: false,
+              enableSuggestions: false,
             ),
           ],
         ),
