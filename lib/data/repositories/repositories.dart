@@ -501,7 +501,7 @@ class SaleRepository {
     );
   }
 
-  /// Replace sale lines and adjust inventory (restock old, deduct new).
+  /// Replace sale lines and adjust inventory by the net change per item.
   Future<Sale> updateSaleLines({
     required String saleId,
     required List<SaleLine> lines,
@@ -514,32 +514,40 @@ class SaleRepository {
       throw StateError('Sale must have at least one line');
     }
 
+    // Apply only the NET stock change per item (new − old). Unchanged lines
+    // never touch inventory, so editing a receipt and saving it as-is (or
+    // cancelling) can't move stock.
+    final deltas = saleStockDeltas(existing.lines, lines);
+    final titles = {for (final l in lines) l.itemId: l.title};
+    final now = DateTime.now().toIso8601String();
     final db = await _db.database;
     await db.transaction((txn) async {
-      for (final line in existing.lines) {
-        await txn.rawUpdate(
-          'UPDATE inventory_items SET amount = amount + ? WHERE id = ?',
-          [line.quantity, line.itemId],
-        );
-      }
-
-      for (final line in lines) {
+      for (final entry in deltas.entries) {
+        final itemId = entry.key;
+        final extraSold = entry.value; // > 0: deduct more, < 0: give back
         final rows = await txn.query(
           'inventory_items',
           columns: ['amount'],
           where: 'id = ?',
-          whereArgs: [line.itemId],
+          whereArgs: [itemId],
         );
         if (rows.isEmpty) {
-          throw StateError('Item missing: ${line.title}');
+          // Item deleted since the sale: nothing to restock; can't sell more.
+          if (extraSold > 1e-9) {
+            throw StateError('Item missing: ${titles[itemId] ?? itemId}');
+          }
+          continue;
         }
         final stock = (rows.first['amount'] as num).toDouble();
-        if (stock + 1e-9 < line.quantity) {
-          throw StateError('Not enough stock for ${line.title}');
+        if (extraSold > 1e-9 && stock + 1e-9 < extraSold) {
+          throw StateError(
+            'Not enough stock for ${titles[itemId] ?? itemId}',
+          );
         }
         await txn.rawUpdate(
-          'UPDATE inventory_items SET amount = amount - ? WHERE id = ?',
-          [line.quantity, line.itemId],
+          'UPDATE inventory_items SET amount = amount - ?, updated_at = ? '
+          'WHERE id = ?',
+          [extraSold, now, itemId],
         );
       }
 
@@ -674,3 +682,21 @@ class DataRepository {
 final dataRepositoryProvider = Provider<DataRepository>((ref) {
   return DataRepository(ref.watch(databaseProvider));
 });
+
+/// Net extra quantity sold per item when a sale's lines change from
+/// [before] to [after] (positive = deduct more stock, negative = restock).
+/// Items whose total quantity is unchanged are omitted.
+Map<String, double> saleStockDeltas(
+  List<SaleLine> before,
+  List<SaleLine> after,
+) {
+  final totals = <String, double>{};
+  for (final l in before) {
+    totals[l.itemId] = (totals[l.itemId] ?? 0) - l.quantity;
+  }
+  for (final l in after) {
+    totals[l.itemId] = (totals[l.itemId] ?? 0) + l.quantity;
+  }
+  totals.removeWhere((_, d) => d.abs() <= 1e-9);
+  return totals;
+}
