@@ -149,6 +149,9 @@ class AppColors {
   static const strokeStrong = Color(0xFF3D5A73);
 }
 
+/// App bar leading slot width (back/close icon + 8 px each side).
+const double kAppBarLeadingWidth = 40;
+
 class AppTheme {
   AppTheme._();
 
@@ -198,11 +201,14 @@ class AppTheme {
         foregroundColor: p.textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
-        // Client feedback (Oct 6): titles are start-aligned and sit tight
-        // to the back/close button like a standard app bar title. Pages
-        // without a leading button set their own `titleSpacing`.
+        // Client feedback (Oct 6 + Oct 8): titles are left-aligned and sit
+        // right next to the back/close button. The default 56 px leading
+        // slot centers the 24 px icon (16 px dead space after it); 40 px
+        // leaves an 8 px gap between the icon and the title. Pages without a
+        // leading button set their own `titleSpacing`.
         centerTitle: false,
         titleSpacing: 0,
+        leadingWidth: kAppBarLeadingWidth,
         iconTheme: IconThemeData(color: p.textSecondary),
         titleTextStyle: text.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
