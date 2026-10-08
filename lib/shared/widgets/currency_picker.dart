@@ -219,6 +219,7 @@ class _CurrencyPickerSheetState extends ConsumerState<_CurrencyPickerSheet> {
       if (q.isEmpty) return true;
       return c.code.toLowerCase().contains(q) ||
           c.name.toLowerCase().contains(q) ||
+          c.nameFor(t.code).toLowerCase().contains(q) ||
           c.symbol.toLowerCase().contains(q);
     }).toList();
 
@@ -253,7 +254,7 @@ class _CurrencyPickerSheetState extends ConsumerState<_CurrencyPickerSheet> {
                 final c = list[i];
                 final active = c.display == _selected || c.code == _selected;
                 return PickerOptionRow(
-                  label: c.name,
+                  label: c.nameFor(t.code),
                   subtitle: c.code,
                   selected: active,
                   onTap: () {
