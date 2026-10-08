@@ -838,11 +838,19 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
   SortState<ItemSortKey> _sort = kDefaultItemSort;
   final Set<String> _collapsed = {};
 
-  /// Cart when the page opened — Cancel restores it.
-  late final List<SaleLine> _snapshot = List<SaleLine>.from(
-    ref.read(cartProvider),
-  );
+  /// Cart when the page opened — Cancel / system Back restores it.
+  ///
+  /// Must be captured in [initState]: a lazy `late final` initializer would
+  /// only run on first access, i.e. inside Cancel itself, and would snapshot
+  /// the already-modified cart (so Cancel kept every removal / qty change).
+  late final List<SaleLine> _snapshot;
   bool _leaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _snapshot = List<SaleLine>.unmodifiable(ref.read(cartProvider));
+  }
 
   @override
   void dispose() {
