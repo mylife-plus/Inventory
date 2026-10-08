@@ -35,6 +35,7 @@ class ReceiptPage extends ConsumerStatefulWidget {
 class _ReceiptPageState extends ConsumerState<ReceiptPage> {
   Sale? _sale;
   bool _loading = true;
+
   /// False until shop receipt details exist — never show QR before that.
   bool _detailsReady = false;
   bool _promptingDetails = false;
@@ -129,8 +130,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       try {
         customer = customers.firstWhere((c) => c.id == customerId);
       } catch (_) {
-        customer =
-            await ref.read(customerRepositoryProvider).get(customerId);
+        customer = await ref.read(customerRepositoryProvider).get(customerId);
       }
     }
 
@@ -263,9 +263,9 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     } catch (e, st) {
       debugPrint('Print receipt failed: $e\n$st');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${t('print_failed')}: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${t('print_failed')}: $e')));
     }
   }
 
@@ -336,8 +336,9 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
   }
 
   Future<void> _changeCustomer(Sale sale) async {
-    final changed =
-        await context.push<bool>('/sell/customer?saleId=${sale.id}');
+    final changed = await context.push<bool>(
+      '/sell/customer?saleId=${sale.id}',
+    );
     if (changed != true || !mounted) return;
     final fresh = await ref.read(saleRepositoryProvider).get(sale.id);
     if (mounted && fresh != null) setState(() => _sale = fresh);
@@ -374,8 +375,9 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     // Prefill sell cart with this receipt's lines and open the sell items page.
     ref.read(cartProvider.notifier).replaceAll(sale.lines);
     ref.read(editingSaleIdProvider.notifier).state = sale.id;
-    ref.read(editingSaleLinesProvider.notifier).state =
-        List<SaleLine>.from(sale.lines);
+    ref.read(editingSaleLinesProvider.notifier).state = List<SaleLine>.from(
+      sale.lines,
+    );
     ref.read(sellCustomerProvider.notifier).state = null;
     if (!mounted) return;
     // The editor takes the receipt's place in the history, so Cancel (a
@@ -475,10 +477,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                 style: TextStyle(color: p.textSecondary, height: 1.35),
               ),
               const SizedBox(height: 24),
-              AccentButton(
-                label: t('continue_btn'),
-                onPressed: _retryDetails,
-              ),
+              AccentButton(label: t('continue_btn'), onPressed: _retryDetails),
             ],
           ),
         ),
@@ -537,8 +536,10 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                   ),
                 ),
                 if (settings.street.trim().isNotEmpty)
-                  Text(settings.street.replaceAll('\u001F', ' '),
-                      textAlign: TextAlign.center),
+                  Text(
+                    settings.street.replaceAll('\u001F', ' '),
+                    textAlign: TextAlign.center,
+                  ),
                 if (zipCity.isNotEmpty)
                   Text(zipCity, textAlign: TextAlign.center),
                 if (settings.phone.isNotEmpty)
@@ -550,8 +551,10 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                 ),
                 Text(
                   formatDateTimeShort(sale.createdAt, t.code),
-                  style:
-                      const TextStyle(fontSize: 12, color: Color(0xFF666666)),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF666666),
+                  ),
                 ),
                 const Divider(height: 22, color: Color(0xFFDDDDDD)),
                 ...sale.lines.map(
@@ -565,8 +568,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                             '${formatQty(l.quantity)} x ${l.title}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -730,7 +732,9 @@ class ReceiptsYearsPage extends ConsumerStatefulWidget {
 
 enum _ReceiptYearSortKey { year, receipts }
 
-const _kDefaultYearSort = SortState<_ReceiptYearSortKey>(_ReceiptYearSortKey.year);
+const _kDefaultYearSort = SortState<_ReceiptYearSortKey>(
+  _ReceiptYearSortKey.year,
+);
 
 class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
   bool _showSearch = false;
@@ -844,8 +848,7 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
         if (d.isBefore(start)) return false;
       }
       if (_to != null) {
-        final end =
-            DateTime(_to!.year, _to!.month, _to!.day, 23, 59, 59, 999);
+        final end = DateTime(_to!.year, _to!.month, _to!.day, 23, 59, 59, 999);
         if (d.isAfter(end)) return false;
       }
       return true;
@@ -862,9 +865,7 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
     if (q.isNotEmpty) {
       entries = entries
           .where(
-            (e) =>
-                '${e.key}'.contains(q) ||
-                '${e.value.length}'.contains(q),
+            (e) => '${e.key}'.contains(q) || '${e.value.length}'.contains(q),
           )
           .toList();
     }
@@ -904,10 +905,7 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
               if (list == null || list.isEmpty) return;
               _exportReceipts(_filteredSales(list));
             },
-            icon: Icon(
-              Icons.file_download_outlined,
-              color: p.textPrimary,
-            ),
+            icon: Icon(Icons.file_download_outlined, color: p.textPrimary),
           ),
         ],
       ),
@@ -936,8 +934,7 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
                   onSearch: () => setState(() => _showSearch = !_showSearch),
                   sortActive: _sort != _kDefaultYearSort,
                   filterActive: _from != null || _to != null,
-                  searchActive:
-                      _showSearch || _search.text.trim().isNotEmpty,
+                  searchActive: _showSearch || _search.text.trim().isNotEmpty,
                 ),
               ),
               if (_showSearch)
@@ -995,7 +992,11 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
                                               ),
                                               const SizedBox(width: 8),
                                               Text(
-                                                t('year_receipts').replaceAll(
+                                                t(
+                                                  years[i].value.length == 1
+                                                      ? 'year_receipts_one'
+                                                      : 'year_receipts',
+                                                ).replaceAll(
                                                   '{count}',
                                                   '${years[i].value.length}',
                                                 ),
@@ -1008,8 +1009,9 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
                                               const SizedBox(width: 4),
                                               Icon(
                                                 Icons.chevron_right_rounded,
-                                                color: p.textPrimary
-                                                    .withValues(alpha: 0.55),
+                                                color: p.textPrimary.withValues(
+                                                  alpha: 0.55,
+                                                ),
                                               ),
                                             ],
                                           ),
@@ -1057,8 +1059,8 @@ class ReceiptsYearPage extends ConsumerWidget {
 
     Future<void> exportYear(List<Sale> yearSales) async {
       await CsvExportService().exportReceipts(
-      context: context,
-      sales: yearSales,
+        context: context,
+        sales: yearSales,
         currency: settings?.currencySymbol ?? '€',
         companyName: settings?.companyName,
         from: DateTime(year, 1, 1),
@@ -1076,15 +1078,13 @@ class ReceiptsYearPage extends ConsumerWidget {
             onPressed: () {
               final list = sales.valueOrNull;
               if (list == null) return;
-              final yearSales =
-                  list.where((s) => s.createdAt.year == year).toList();
+              final yearSales = list
+                  .where((s) => s.createdAt.year == year)
+                  .toList();
               if (yearSales.isEmpty) return;
               exportYear(yearSales);
             },
-            icon: Icon(
-              Icons.file_download_outlined,
-              color: p.textPrimary,
-            ),
+            icon: Icon(Icons.file_download_outlined, color: p.textPrimary),
           ),
         ],
       ),
@@ -1092,8 +1092,9 @@ class ReceiptsYearPage extends ConsumerWidget {
         loading: () => const AppLoader(),
         error: (e, _) => Center(child: Text('$e')),
         data: (list) {
-          final yearSales =
-              list.where((s) => s.createdAt.year == year).toList();
+          final yearSales = list
+              .where((s) => s.createdAt.year == year)
+              .toList();
           if (yearSales.isEmpty) {
             return EmptyState(
               icon: Icons.receipt_long_rounded,

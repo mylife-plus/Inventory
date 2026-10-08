@@ -440,7 +440,10 @@ class _SellPageState extends ConsumerState<SellPage> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    t.tr('cart_items_count', {'qty': formatQty(qty)}),
+                    t.tr(
+                      qty == 1 ? 'cart_items_count_one' : 'cart_items_count',
+                      {'qty': formatQty(qty)},
+                    ),
                     style: TextStyle(
                       color: p.textPrimary,
                       fontWeight: FontWeight.w700,
@@ -975,7 +978,12 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    t.tr('cart_items_count', {'qty': formatQty(cartCount)}),
+                    t.tr(
+                      cartCount == 1
+                          ? 'cart_items_count_one'
+                          : 'cart_items_count',
+                      {'qty': formatQty(cartCount)},
+                    ),
                     style: TextStyle(
                       color: p.textPrimary,
                       fontWeight: FontWeight.w700,
@@ -1288,7 +1296,9 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
                                   child: Text(
-                                    ref.read(tProvider).tr('camera_error', {'code': '${error.errorCode}'}),
+                                    ref.read(tProvider).tr('camera_error', {
+                                      'code': '${error.errorCode}',
+                                    }),
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(color: Colors.white),
                                   ),
