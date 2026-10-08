@@ -1,14 +1,15 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
+import 'package:inventory_app/core/l10n/s.dart';
 import 'package:inventory_app/core/print/print_service.dart';
 import 'package:inventory_app/core/receipts/receipt_details_gate.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/contact_launch.dart';
+import 'package:inventory_app/core/utils/app_haptics.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/export/csv_export.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
@@ -18,8 +19,6 @@ import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
-import 'package:inventory_app/shared/widgets/print_preview_page.dart';
-import 'package:pdf/pdf.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:inventory_app/core/share/share_origin.dart';
@@ -232,73 +231,95 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     );
   }
 
-  /// Opens the dedicated print window: paper choice (A4 or 80/58 mm
-  /// receipt roll for thermal printers), preview, Print → system dialog.
+  /// Receipt Print: a small paper-size picker (A4 / 80 mm / 58 mm roll,
+  /// last choice preselected) that goes straight into the OS print dialog.
   Future<void> _printReceipt(
     Sale sale,
     MoneyFormatter money,
     ShopSettings fallback,
   ) async {
     final t = ref.read(tProvider);
-    final shop = ref.read(shopSettingsProvider).valueOrNull ?? fallback;
     final initial = await PrintService.lastReceiptPaper();
     if (!mounted) return;
-    final papers = [
-      PrintPaperChoice(
-        id: PrintService.receiptPaperA4,
-        label: t('paper_a4'),
-        subtitle: t('paper_a4_sub'),
-        icon: Icons.description_rounded,
-        format: PrintService.receiptFormatFor(PrintService.receiptPaperA4),
-      ),
-      PrintPaperChoice(
-        id: PrintService.receiptPaperRoll80,
-        label: t('paper_roll80'),
-        subtitle: t('paper_roll80_sub'),
-        icon: Icons.receipt_long_rounded,
-        format: PrintService.receiptFormatFor(PrintService.receiptPaperRoll80),
-      ),
-      PrintPaperChoice(
-        id: PrintService.receiptPaperRoll58,
-        label: t('paper_roll58'),
-        subtitle: t('paper_roll58_sub'),
-        icon: Icons.receipt_rounded,
-        format: PrintService.receiptFormatFor(PrintService.receiptPaperRoll58),
-      ),
-    ];
-    // One build per paper size, shared by preview and print.
-    final built = <String, Future<({Uint8List bytes, PdfPageFormat format})>>{};
-    Future<({Uint8List bytes, PdfPageFormat format})> build(
-      PrintPaperChoice paper,
-    ) {
-      return built.putIfAbsent(
-        paper.id,
-        () => PrintService.buildReceiptPdf(
-          shop: shop,
-          sale: sale,
-          money: money.format,
-          format: paper.format,
-        ),
+    final paper = await _pickReceiptPaper(t, initial);
+    if (paper == null || !mounted) return;
+    unawaited(PrintService.saveReceiptPaper(paper));
+    final shop = ref.read(shopSettingsProvider).valueOrNull ?? fallback;
+    try {
+      // Built up front; onLayout only hands these bytes to the system.
+      final pdf = await PrintService.buildReceiptPdf(
+        shop: shop,
+        sale: sale,
+        money: money.format,
+        format: PrintService.receiptFormatFor(paper),
+      );
+      await PrintService.layoutReceiptPdf(
+        bytes: pdf.bytes,
+        format: pdf.format,
+        sale: sale,
+      );
+    } catch (e, st) {
+      debugPrint('Print receipt failed: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${t('print_failed')}: $e')),
       );
     }
+  }
 
-    await openPrintPage(
-      context,
-      title: t('print_receipt'),
-      papers: papers,
-      initialPaperId: initial,
-      onPaperChanged: (paper) =>
-          unawaited(PrintService.saveReceiptPaper(paper.id)),
-      preview: (paper) async {
-        final pdf = await build(paper ?? papers.first);
-        return PrintService.rasterPreviewPng(pdf.bytes, pdf.format);
-      },
-      onPrint: (paper) async {
-        final pdf = await build(paper ?? papers.first);
-        await PrintService.layoutReceiptPdf(
-          bytes: pdf.bytes,
-          format: pdf.format,
-          sale: sale,
+  Future<String?> _pickReceiptPaper(S t, String initial) {
+    final options = [
+      (
+        id: PrintService.receiptPaperA4,
+        label: t('paper_a4'),
+        sub: t('paper_a4_sub'),
+        icon: Icons.description_rounded,
+      ),
+      (
+        id: PrintService.receiptPaperRoll80,
+        label: t('paper_roll80'),
+        sub: t('paper_roll80_sub'),
+        icon: Icons.receipt_long_rounded,
+      ),
+      (
+        id: PrintService.receiptPaperRoll58,
+        label: t('paper_roll58'),
+        sub: t('paper_roll58_sub'),
+        icon: Icons.receipt_rounded,
+      ),
+    ];
+    return showAppSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppSheetHeader(
+                title: t('printer_paper_size'),
+                subtitle: t('receipt_paper_sub'),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                child: Column(
+                  children: [
+                    for (final o in options) ...[
+                      _PaperOptionRow(
+                        icon: o.icon,
+                        label: o.label,
+                        subtitle: o.sub,
+                        selected: o.id == initial,
+                        onTap: () => Navigator.of(ctx).pop(o.id),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1115,6 +1136,89 @@ class ReceiptsYearPage extends ConsumerWidget {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+/// One paper size in the receipt print picker. Tap = print on that paper.
+class _PaperOptionRow extends StatelessWidget {
+  const _PaperOptionRow({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    return Pressable(
+      onTap: () {
+        AppHaptics.selection();
+        onTap();
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: p.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? p.fabBorder : p.stroke,
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected
+                    ? p.fabBorder.withValues(alpha: 0.18)
+                    : p.cardElevated,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                size: 22,
+                color: selected ? p.fabBorder : p.textMuted,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: p.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12.5, color: p.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.print_rounded, size: 22, color: p.textSecondary),
+          ],
+        ),
       ),
     );
   }

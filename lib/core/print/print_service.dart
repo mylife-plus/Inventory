@@ -4,15 +4,12 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:inventory_app/domain/models/models.dart';
-import 'package:inventory_app/shared/widgets/app_sheets.dart';
 
 /// Thermal-friendly PDF print (58mm / 80mm) for QR labels & receipts.
 /// Uses bundled Inter (assets/google_fonts) so € / Unicode render offline.
@@ -66,40 +63,6 @@ class PrintService {
       // Printing will surface the error to the user; log for device debugging.
       debugPrint('PrintService.preload failed: $e\n$st');
     }
-  }
-
-  static Future<PdfPageFormat?> pickRollFormat(BuildContext context) {
-    return showAppSheet<PdfPageFormat>(
-      context: context,
-      isScrollControlled: false,
-      heightFactor: 0.42,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppSheetHeader(
-                title: ProviderScope.containerOf(context).read(tProvider)('printer_paper_size'),
-                subtitle: ProviderScope.containerOf(context).read(tProvider)('printer_paper_sub'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.receipt_long_rounded),
-                title: const Text('58 mm (roll)'),
-                subtitle: const Text('Common pocket / label printers'),
-                onTap: () => Navigator.pop(ctx, PdfPageFormat.roll57),
-              ),
-              ListTile(
-                leading: const Icon(Icons.print_rounded),
-                title: const Text('80 mm (roll)'),
-                subtitle: const Text('Standard receipt printers'),
-                onTap: () => Navigator.pop(ctx, PdfPageFormat.roll80),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   static Future<void> printQrLabel({
@@ -173,8 +136,12 @@ class PrintService {
     required String qrData,
     String? companyName,
     PdfPageFormat? format,
+    /// How many copies of the label to lay out on one page (grid). 1 keeps
+    /// the single-sticker page (A6 on Android, 70×100 mm on iOS).
+    int perPage = 1,
   }) async {
     _validatePdf(bytes, 'prebuilt');
+    final int count = perPage.clamp(1, qrLabelsPerPageMax);
 
     // Finish raster BEFORE opening the system UI.
     final png = await rasterQrLabelPng(
@@ -188,16 +155,23 @@ class PrintService {
     // OEM print UIs then omit a reliable cancel/back. Use ISO A6 (predefined)
     // so the system dialog always has a normal dismiss control. iOS keeps the
     // compact sticker size + forceCustomPrintPaper.
+    // Several labels per page always go on a predefined A4 sheet (both
+    // platforms), so the system dialog keeps its normal paper handling.
     final bool android = !kIsWeb && Platform.isAndroid;
-    final pageFormat = android ? PdfPageFormat.a6 : _finiteFormat(format);
+    final bool sheet = count > 1;
+    final pageFormat = sheet
+        ? PdfPageFormat.a4
+        : (android ? PdfPageFormat.a6 : _finiteFormat(format));
 
     Future<Uint8List> wrapOnly(PdfPageFormat requested) async {
       final target = _finiteFormat(android ? pageFormat : requested);
-      final out = await wrapLabelImagePdf(png, target);
+      final out = sheet
+          ? await wrapLabelGridPdf(png, count, target)
+          : await wrapLabelImagePdf(png, target);
       debugPrint(
         'QR label print open: ${out.length} bytes '
         '(${target.width.toStringAsFixed(1)}x${target.height.toStringAsFixed(1)}pt'
-        '${android ? ', android-a6' : ''})',
+        ', $count/page${android ? ', android' : ''})',
       );
       _validatePdf(out, 'onLayout');
       return out;
@@ -223,8 +197,130 @@ class PrintService {
       format: pageFormat,
       // Android: false avoids repeated onLayout while the dialog is open.
       dynamicLayout: !android,
-      forceCustomPrintPaper: !android,
+      // iOS: the compact sticker needs the custom paper; an A4 sheet does not.
+      forceCustomPrintPaper: !android && !sheet,
     );
+  }
+
+  /// Choices for "labels per page" on the QR label screen.
+  static const List<int> qrLabelsPerPageOptions = [1, 2, 4, 6, 8, 12];
+  static const int qrLabelsPerPageMax = 12;
+  static const String _qrPerPagePrefKey = 'qr_labels_per_page';
+
+  static Future<int> lastQrLabelsPerPage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getInt(_qrPerPagePrefKey) ?? 1;
+      return qrLabelsPerPageOptions.contains(v) ? v : 1;
+    } catch (_) {
+      return 1;
+    }
+  }
+
+  static Future<void> saveQrLabelsPerPage(int n) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_qrPerPagePrefKey, n);
+    } catch (e) {
+      debugPrint('Saving labels per page failed: $e');
+    }
+  }
+
+  /// Columns × rows that give the largest label for [count] labels in the
+  /// [width]×[height] area (label aspect 70:100, [gap] between cells).
+  static ({int cols, int rows, double labelW, double labelH}) qrLabelGrid(
+    int count,
+    double width,
+    double height, {
+    double gap = 4 * PdfPageFormat.mm,
+  }) {
+    final n = count < 1 ? 1 : count;
+    final aspectW = qrLabelFormat.width;
+    final aspectH = qrLabelFormat.height;
+    var best = (cols: 1, rows: n, labelW: 0.0, labelH: 0.0);
+    var bestScale = -1.0;
+    for (var cols = 1; cols <= n; cols++) {
+      final rows = (n + cols - 1) ~/ cols;
+      final cellW = (width - gap * (cols - 1)) / cols;
+      final cellH = (height - gap * (rows - 1)) / rows;
+      if (cellW <= 0 || cellH <= 0) continue;
+      final scale = (cellW / aspectW) < (cellH / aspectH)
+          ? cellW / aspectW
+          : cellH / aspectH;
+      if (scale > bestScale + 1e-9) {
+        bestScale = scale;
+        best = (
+          cols: cols,
+          rows: rows,
+          labelW: aspectW * scale,
+          labelH: aspectH * scale,
+        );
+      }
+    }
+    return best;
+  }
+
+  /// [count] copies of the rasterized label on one [format] page (grid with
+  /// light cut lines). Image-only like [wrapLabelImagePdf] — no fonts.
+  static Future<Uint8List> wrapLabelGridPdf(
+    Uint8List png,
+    int count,
+    PdfPageFormat format,
+  ) async {
+    if (count <= 1) return wrapLabelImagePdf(png, format);
+    if (png.length < _minPngBytes) {
+      throw StateError('Cannot wrap tiny PNG (${png.length} bytes)');
+    }
+    final pageFormat = _finiteFormat(format);
+    const margin = 8 * PdfPageFormat.mm;
+    const gap = 4 * PdfPageFormat.mm;
+    final grid = qrLabelGrid(
+      count,
+      pageFormat.width - margin * 2,
+      pageFormat.height - margin * 2,
+      gap: gap,
+    );
+    final image = pw.MemoryImage(png);
+    pw.Widget cell() => pw.Container(
+          width: grid.labelW,
+          height: grid.labelH,
+          decoration: pw.BoxDecoration(
+            color: PdfColors.white,
+            border: pw.Border.all(color: PdfColors.grey400, width: 0.4),
+          ),
+          child: pw.Image(image, fit: pw.BoxFit.contain),
+        );
+    final rows = <pw.Widget>[];
+    var placed = 0;
+    for (var r = 0; r < grid.rows && placed < count; r++) {
+      final cells = <pw.Widget>[];
+      for (var c = 0; c < grid.cols && placed < count; c++) {
+        if (c > 0) cells.add(pw.SizedBox(width: gap));
+        cells.add(cell());
+        placed++;
+      }
+      if (r > 0) rows.add(pw.SizedBox(height: gap));
+      rows.add(
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: cells,
+        ),
+      );
+    }
+    final doc = pw.Document();
+    doc.addPage(
+      pw.Page(
+        pageFormat: pageFormat,
+        margin: const pw.EdgeInsets.all(margin),
+        build: (_) => pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.start,
+          children: rows,
+        ),
+      ),
+    );
+    final bytes = await doc.save();
+    _validatePdf(bytes, 'grid');
+    return bytes;
   }
 
   static void _validatePdf(Uint8List bytes, String label) {
@@ -645,19 +741,6 @@ class PrintService {
       'qr=${qrData != null})',
     );
     return (bytes: bytes, format: pageFormat);
-  }
-
-  /// PNG preview of page 1 of [pdf] (~[targetWidthPx] wide) for the print
-  /// window. Never called from inside `onLayout`.
-  static Future<Uint8List> rasterPreviewPng(
-    Uint8List pdf,
-    PdfPageFormat format, {
-    double targetWidthPx = 900,
-  }) async {
-    final dpi = (targetWidthPx / (format.width / PdfPageFormat.inch))
-        .clamp(72.0, 300.0);
-    final page = await Printing.raster(pdf, pages: const [0], dpi: dpi).first;
-    return page.toPng();
   }
 
   /// Opens the system print dialog for a receipt built by [buildReceiptPdf].

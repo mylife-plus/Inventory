@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,12 +8,12 @@ import 'package:inventory_app/core/print/print_service.dart';
 import 'package:inventory_app/core/qr/qr_payload.dart';
 import 'package:inventory_app/core/share/share_origin.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
+import 'package:inventory_app/core/utils/app_haptics.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
-import 'package:inventory_app/shared/widgets/print_preview_page.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -55,6 +54,9 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   Timer? _pdfDebounce;
   int _pdfGen = 0;
 
+  /// Labels laid out on one printed page (remembered between sessions).
+  int _perPage = 1;
+
   late final TextEditingController _titleCtrl;
   late final TextEditingController _subtitleCtrl;
   late final TextEditingController _linkCtrl;
@@ -70,7 +72,20 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     _linkCtrl.addListener(_onFieldsChanged);
     // Warm fonts immediately (also started from main.dart).
     unawaited(PrintService.preload());
+    unawaited(_loadPerPage());
     _load();
+  }
+
+  Future<void> _loadPerPage() async {
+    final n = await PrintService.lastQrLabelsPerPage();
+    if (mounted && n != _perPage) setState(() => _perPage = n);
+  }
+
+  void _setPerPage(int n) {
+    if (n == _perPage) return;
+    AppHaptics.selection();
+    setState(() => _perPage = n);
+    unawaited(PrintService.saveQrLabelsPerPage(n));
   }
 
   void _onFieldsChanged() {
@@ -249,31 +264,17 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
       setState(() => _busy = false);
       // Persist in the background; don't delay the print window.
       unawaited(_persist());
-      debugPrint('QR label print tap: ${ready.length} bytes');
-      // Snapshot the label so the print window shows/prints exactly this.
-      final title = _labelTitle;
-      final subtitle = _labelSubtitle;
-      final qrData = _qrData;
-      final company = _companyName;
-      // Dedicated print window (preview + Print → system print dialog).
-      // Same proven pipeline: PNG rasterized up front, onLayout only wraps.
-      await openPrintPage(
-        context,
-        title: ref.read(tProvider)('print_label'),
-        preview: (_) => PrintService.rasterQrLabelPng(
-          title: title,
-          subtitle: subtitle,
-          qrData: qrData,
-          companyName: company,
-        ),
-        onPrint: (_) => PrintService.layoutQrLabelPdf(
-          bytes: ready,
-          title: title,
-          subtitle: subtitle,
-          qrData: qrData,
-          companyName: company,
-          format: PrintService.qrLabelFormat,
-        ),
+      debugPrint('QR label print tap: ${ready.length} bytes, $_perPage/page');
+      // Straight to the OS print dialog. PNG is rasterized before the sheet
+      // opens; onLayout only wraps it (1 label, or a grid of [_perPage]).
+      await PrintService.layoutQrLabelPdf(
+        bytes: ready,
+        title: _labelTitle,
+        subtitle: _labelSubtitle,
+        qrData: _qrData,
+        companyName: _companyName,
+        format: PrintService.qrLabelFormat,
+        perPage: _perPage,
       );
     } catch (e, st) {
       debugPrint('Print label failed: $e\n$st');
@@ -486,6 +487,14 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
           const SizedBox(height: 14),
           Row(
             children: [
+              _PerPagePicker(
+                value: _perPage,
+                label: t('per_page'),
+                menuTitle: t('labels_per_page'),
+                enabled: !_busy,
+                onChanged: _setPerPage,
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: AccentButton(
                   label: t('print_label'),
@@ -509,6 +518,14 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
               ),
             ],
           ),
+          if (_perPage > 1) ...[
+            const SizedBox(height: 8),
+            Text(
+              t('labels_on_a4').replaceAll('{n}', '$_perPage'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: p.textSecondary, fontSize: 12.5),
+            ),
+          ],
         ],
       ),
     );
@@ -537,6 +554,151 @@ class _RoundAction extends StatelessWidget {
           border: Border.all(color: p.stroke),
         ),
         child: Icon(icon, color: p.textPrimary, size: 22),
+      ),
+    );
+  }
+}
+
+/// "Labels per page" selector next to Print (same 52 px box as the round
+/// actions). Opens a compact menu with the counts in
+/// [PrintService.qrLabelsPerPageOptions].
+class _PerPagePicker extends StatelessWidget {
+  const _PerPagePicker({
+    required this.value,
+    required this.label,
+    required this.menuTitle,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final int value;
+  final String label;
+  final String menuTitle;
+  final bool enabled;
+  final ValueChanged<int> onChanged;
+
+  Future<void> _open(BuildContext context) async {
+    final p = AppPalette.of(context);
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+    AppHaptics.light();
+    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final picked = await showMenu<int>(
+      context: context,
+      color: p.cardElevated,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: p.stroke),
+      ),
+      position: RelativeRect.fromLTRB(
+        topLeft.dx,
+        topLeft.dy,
+        overlay.size.width - topLeft.dx - box.size.width,
+        overlay.size.height - topLeft.dy,
+      ),
+      items: [
+        PopupMenuItem<int>(
+          enabled: false,
+          height: 36,
+          child: Text(
+            menuTitle,
+            style: TextStyle(
+              color: p.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        for (final n in PrintService.qrLabelsPerPageOptions)
+          PopupMenuItem<int>(
+            value: n,
+            height: 44,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 28,
+                  child: Text(
+                    '$n',
+                    style: TextStyle(
+                      color: p.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  n == 1 ? Icons.crop_portrait_rounded : Icons.grid_view_rounded,
+                  size: 18,
+                  color: p.textMuted,
+                ),
+                const SizedBox(width: 24),
+                if (n == value)
+                  Icon(Icons.check_rounded, size: 20, color: p.fabBorder),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (picked != null) onChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    return Semantics(
+      button: true,
+      label: '$menuTitle: $value',
+      child: Pressable(
+        onTap: enabled ? () => _open(context) : null,
+        enabled: enabled,
+        child: Container(
+          width: 64,
+          height: 52,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: p.card,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: p.stroke),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$value',
+                    style: TextStyle(
+                      color: p.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17,
+                      height: 1.1,
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_drop_down_rounded,
+                    size: 20,
+                    color: p.textSecondary,
+                  ),
+                ],
+              ),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: p.textSecondary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  height: 1.1,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

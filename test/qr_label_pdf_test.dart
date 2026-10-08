@@ -330,6 +330,39 @@ void main() {
   });
 
 
+  test('labels-per-page grid fits every option on A4 without overlap', () {
+    const margin = 8 * PdfPageFormat.mm;
+    const gap = 4 * PdfPageFormat.mm;
+    final w = PdfPageFormat.a4.width - 2 * margin;
+    final h = PdfPageFormat.a4.height - 2 * margin;
+    for (final n in PrintService.qrLabelsPerPageOptions) {
+      final g = PrintService.qrLabelGrid(n, w, h, gap: gap);
+      expect(g.cols * g.rows, greaterThanOrEqualTo(n), reason: 'n=$n');
+      expect(g.cols * g.labelW + (g.cols - 1) * gap, lessThanOrEqualTo(w + 0.01));
+      expect(g.rows * g.labelH + (g.rows - 1) * gap, lessThanOrEqualTo(h + 0.01));
+      // Keeps the 70:100 label proportions.
+      expect(g.labelW / g.labelH, closeTo(0.7, 0.001));
+    }
+    // 6 on portrait A4 → 2 columns × 3 rows gives the biggest labels.
+    final six = PrintService.qrLabelGrid(6, w, h, gap: gap);
+    expect((six.cols, six.rows), (2, 3));
+  });
+
+  test('labels-per-page PDF is a valid single image page for each option',
+      () async {
+    final single =
+        await PrintService.wrapLabelImagePdf(_samplePng, PdfPageFormat.a4);
+    final imagesPerLabel = asciiCount(single, '/Subtype/Image');
+    for (final n in PrintService.qrLabelsPerPageOptions) {
+      final bytes =
+          await PrintService.wrapLabelGridPdf(_samplePng, n, PdfPageFormat.a4);
+      expect(bytes.length, greaterThan(800), reason: 'n=$n');
+      expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+      // One embedded image, reused for every copy on the page.
+      expect(asciiCount(bytes, '/Subtype/Image'), imagesPerLabel);
+    }
+  });
+
   testWidgets('sharePositionOrigin never returns an empty rect', (tester) async {
     await tester.pumpWidget(
       const Directionality(
