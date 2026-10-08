@@ -27,6 +27,37 @@ class PrintService {
     marginAll: 5 * PdfPageFormat.mm,
   );
 
+  /// Label text sizes (pt), shared by the printed label and the on-screen
+  /// preview. Big by default; long texts step down so they always fit on
+  /// two lines instead of being cut off.
+  static const double labelCompanySize = 16;
+  static const double labelTitleMax = 20;
+  static const double labelSubtitleMax = 16;
+  static const double labelQrSize = 46 * PdfPageFormat.mm;
+
+  /// Text width available on the 70 mm label (10 pt padding each side).
+  static double get _labelTextWidth => qrLabelFormat.width - 20;
+
+  static double _fitSize(String text, double max, double min, double em) {
+    final n = text.trim().length;
+    if (n == 0) return max;
+    final fit = 2 * _labelTextWidth / (em * n);
+    return fit.clamp(min, max).toDouble();
+  }
+
+  static double labelTitleSize(String title) =>
+      _fitSize(title, labelTitleMax, 11, 0.62);
+
+  static double labelSubtitleSize(String subtitle) =>
+      _fitSize(subtitle, labelSubtitleMax, 9, 0.56);
+
+  static double labelCompanyFit(String company) {
+    final n = company.trim().length;
+    if (n == 0) return labelCompanySize;
+    final fit = _labelTextWidth / (0.62 * n);
+    return fit.clamp(9.0, labelCompanySize).toDouble();
+  }
+
   static const int _minPdfBytes = 800;
   static const int _minPngBytes = 400;
   static const double _rasterDpi = 300;
@@ -432,7 +463,7 @@ class PrintService {
       doc: pw.Document(),
       fonts: fonts,
       format: format,
-      qrSize: 52 * PdfPageFormat.mm,
+      qrSize: labelQrSize,
       company: company,
       title: title,
       subtitle: subtitle,
@@ -509,7 +540,11 @@ class PrintService {
                   pw.Text(
                     company.trim(),
                     textAlign: pw.TextAlign.center,
-                    style: pw.TextStyle(font: fonts.bold, fontSize: 10),
+                    maxLines: 1,
+                    style: pw.TextStyle(
+                      font: fonts.bold,
+                      fontSize: labelCompanyFit(company),
+                    ),
                   ),
                   pw.SizedBox(height: 6),
                 ],
@@ -526,14 +561,22 @@ class PrintService {
                 pw.Text(
                   safeTitle,
                   textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(font: fonts.bold, fontSize: 12),
+                  maxLines: 2,
+                  style: pw.TextStyle(
+                    font: fonts.bold,
+                    fontSize: labelTitleSize(safeTitle),
+                  ),
                 ),
                 if (subtitle.trim().isNotEmpty) ...[
                   pw.SizedBox(height: 3),
                   pw.Text(
                     subtitle.trim(),
                     textAlign: pw.TextAlign.center,
-                    style: pw.TextStyle(font: fonts.regular, fontSize: 10),
+                    maxLines: 2,
+                    style: pw.TextStyle(
+                      font: fonts.regular,
+                      fontSize: labelSubtitleSize(subtitle),
+                    ),
                   ),
                 ],
               ],

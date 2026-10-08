@@ -312,6 +312,30 @@ void main() {
     }
   });
 
+  test('label text is large by default and long texts shrink to fit', () {
+    expect(PrintService.labelTitleSize('Cheese'), 20);
+    expect(PrintService.labelSubtitleSize('3,50 € per kg'), 16);
+    expect(PrintService.labelCompanyFit('Demo Shop'), 16);
+    final long = 'Organic Alpine Mountain Cheese from the Valley Farm';
+    final s = PrintService.labelTitleSize(long);
+    expect(s, lessThan(20));
+    expect(s, greaterThanOrEqualTo(11));
+    // Two lines at the chosen size cover the estimated text width.
+    final textW = PrintService.qrLabelFormat.width - 20;
+    expect(long.length * 0.62 * s, lessThanOrEqualTo(2 * textW + 1));
+  });
+
+  test('label PDF builds with long company/title/subtitle', () async {
+    final bytes = await PrintService.buildQrLabelPdf(
+      title: 'Organic Alpine Mountain Cheese from the Valley Farm Cooperative',
+      subtitle: '12,90 € per kg – matured 24 months in natural caves',
+      qrData: 'payload-long',
+      companyName: 'Very Long Company Name Delikatessen GmbH & Co. KG',
+    );
+    expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+    expect(asciiCount(bytes, '/Type/Page'), greaterThanOrEqualTo(1));
+  });
+
   test('image-wrap PDF builds 20 times for any paper size without miss', () async {
     expect(_samplePng.length, greaterThanOrEqualTo(400));
     final formats = [

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/print/print_service.dart';
+import 'package:pdf/pdf.dart';
 import 'package:inventory_app/core/qr/qr_payload.dart';
 import 'package:inventory_app/core/share/share_origin.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
@@ -41,6 +43,7 @@ class QrLabelPage extends ConsumerStatefulWidget {
 class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   bool _loading = true;
   bool _busy = false;
+
   /// True while a background PDF rebuild is in flight (Print shows hourglass).
   bool _pdfBuilding = false;
   InventoryItem? _item;
@@ -101,9 +104,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
       '$_labelTitle\x1f$_labelSubtitle\x1f$_qrData\x1f${_companyName.trim()}';
 
   bool get _pdfReady =>
-      _pdfBytes != null &&
-      _pdfBytes!.isNotEmpty &&
-      _pdfCacheKey == _pdfKey;
+      _pdfBytes != null && _pdfBytes!.isNotEmpty && _pdfCacheKey == _pdfKey;
 
   void _schedulePdfRebuild() {
     _pdfDebounce?.cancel();
@@ -148,8 +149,9 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   }
 
   Future<void> _load() async {
-    final item =
-        await ref.read(inventoryRepositoryProvider).getItem(widget.itemId);
+    final item = await ref
+        .read(inventoryRepositoryProvider)
+        .getItem(widget.itemId);
     if (item == null) {
       if (mounted) context.pop();
       return;
@@ -182,10 +184,9 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
         '${money.format(item.price)} / ${item.unit}',
     };
 
-    _titleCtrl.text =
-        (item.qrTitle != null && item.qrTitle!.trim().isNotEmpty)
-            ? item.qrTitle!
-            : item.title;
+    _titleCtrl.text = (item.qrTitle != null && item.qrTitle!.trim().isNotEmpty)
+        ? item.qrTitle!
+        : item.title;
     // Saved subtitles that were just an old auto default get the current
     // default (so a price change shows on the label).
     final saved = item.qrSubtitle?.trim() ?? '';
@@ -226,10 +227,10 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   /// With a link: link + `#inv=<id>` (phone camera opens the URL, the
   /// in-app scanner still finds the item). Without: the JSON item payload.
   String get _qrData => QrPayload.labelData(
-        itemId: widget.itemId,
-        payload: _payload ?? '',
-        link: _labelLink,
-      );
+    itemId: widget.itemId,
+    payload: _payload ?? '',
+    link: _labelLink,
+  );
 
   Future<void> _persist() async {
     final item = _item;
@@ -326,9 +327,9 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     if (payload == null) return;
     await Clipboard.setData(ClipboardData(text: payload));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ref.read(tProvider)('qr_copied'))),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(ref.read(tProvider)('qr_copied'))));
   }
 
   Future<void> _done() async {
@@ -398,11 +399,13 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
                   Text(
                     company,
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: p.fabBorder,
                       fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                      letterSpacing: 1.2,
+                      fontSize: 17,
+                      letterSpacing: 1.0,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -431,9 +434,11 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
                   Text(
                     _labelTitle,
                     textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: 18,
+                      fontSize: 24,
                       height: 1.15,
                       color: p.textPrimary,
                       letterSpacing: -0.3,
@@ -444,10 +449,12 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
                     Text(
                       _labelSubtitle,
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: p.neon,
                         fontWeight: FontWeight.w800,
-                        fontSize: 15,
+                        fontSize: 20,
                       ),
                     ),
                   ],
@@ -486,16 +493,27 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
             enableSuggestions: false,
           ),
           const SizedBox(height: 14),
+          _PagePreview(
+            count: _perPage,
+            company: company,
+            title: _labelTitle,
+            subtitle: _labelSubtitle,
+            qrData: _qrData,
+            caption: _perPage > 1
+                ? t('labels_on_a4').replaceAll('{n}', '$_perPage')
+                : null,
+            picker: _PerPagePicker(
+              value: _perPage,
+              label: t('per_page'),
+              menuTitle: t('labels_per_page'),
+              enabled: !_busy,
+              onChanged: _setPerPage,
+            ),
+            previewLabel: t('print_preview'),
+          ),
+          const SizedBox(height: 14),
           Row(
             children: [
-              _PerPagePicker(
-                value: _perPage,
-                label: t('per_page'),
-                menuTitle: t('labels_per_page'),
-                enabled: !_busy,
-                onChanged: _setPerPage,
-              ),
-              const SizedBox(width: 10),
               Expanded(
                 child: AccentButton(
                   label: t('print_label'),
@@ -519,15 +537,257 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
               ),
             ],
           ),
-          if (_perPage > 1) ...[
-            const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+/// On-screen page preview: a sheet of paper showing exactly [count] labels
+/// in the same grid the print uses, with the labels-per-page dropdown on it.
+class _PagePreview extends StatelessWidget {
+  const _PagePreview({
+    required this.count,
+    required this.company,
+    required this.title,
+    required this.subtitle,
+    required this.qrData,
+    required this.picker,
+    required this.previewLabel,
+    this.caption,
+  });
+
+  final int count;
+  final String company;
+  final String title;
+  final String subtitle;
+  final String qrData;
+  final Widget picker;
+  final String previewLabel;
+  final String? caption;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    // Same paper as the print: 1 label = full-bleed sticker page (A6 on
+    // Android, the 70×100 mm sticker on iOS); more = A4, 8 mm margin, 4 mm gap.
+    final single = count <= 1;
+    final ios = Theme.of(context).platform == TargetPlatform.iOS;
+    final sheet = single
+        ? (ios ? PrintService.qrLabelFormat : PdfPageFormat.a6)
+        : PdfPageFormat.a4;
+    final margin = single ? 0.0 : 8 * PdfPageFormat.mm;
+    final grid = PrintService.qrLabelGrid(
+      count,
+      sheet.width - margin * 2,
+      sheet.height - margin * 2,
+      gap: 4 * PdfPageFormat.mm,
+    );
+    final text = GoogleFonts.interTextTheme(Theme.of(context).textTheme);
+    return Container(
+      decoration: BoxDecoration(
+        color: p.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.stroke),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                previewLabel,
+                style: TextStyle(
+                  color: p.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              picker,
+            ],
+          ),
+          if (caption != null) ...[
+            const SizedBox(height: 4),
             Text(
-              t('labels_on_a4').replaceAll('{n}', '$_perPage'),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: p.textSecondary, fontSize: 12.5),
+              caption!,
+              style: TextStyle(
+                color: p.textSecondary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
+          const SizedBox(height: 10),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 440),
+              child: AspectRatio(
+                aspectRatio: sheet.width / sheet.height,
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    final scale = box.maxWidth / sheet.width;
+                    final gap = 4 * PdfPageFormat.mm * scale;
+                    final w = grid.labelW * scale;
+                    final h = grid.labelH * scale;
+                    final rows = <Widget>[];
+                    var placed = 0;
+                    for (var r = 0; r < grid.rows && placed < count; r++) {
+                      final cells = <Widget>[];
+                      for (var c = 0; c < grid.cols && placed < count; c++) {
+                        if (c > 0) cells.add(SizedBox(width: gap));
+                        cells.add(
+                          _MiniLabel(
+                            cutLine: !single,
+                            width: w,
+                            height: h,
+                            text: text,
+                            company: company,
+                            title: title,
+                            subtitle: subtitle,
+                            qrData: qrData,
+                          ),
+                        );
+                        placed++;
+                      }
+                      if (r > 0) rows.add(SizedBox(height: gap));
+                      rows.add(
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: cells,
+                        ),
+                      );
+                    }
+                    return Container(
+                      color: Colors.white,
+                      padding: EdgeInsets.all(margin * scale),
+                      child: Column(
+                        mainAxisAlignment: single
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.start,
+                        children: rows,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// One label on the page preview, scaled to the cell size. Text uses the
+/// same point sizes as the printed label so the preview matches the print.
+class _MiniLabel extends StatelessWidget {
+  const _MiniLabel({
+    this.cutLine = true,
+    required this.width,
+    required this.height,
+    required this.text,
+    required this.company,
+    required this.title,
+    required this.subtitle,
+    required this.qrData,
+  });
+
+  final bool cutLine;
+  final double width;
+  final double height;
+  final TextTheme text;
+  final String company;
+  final String title;
+  final String subtitle;
+  final String qrData;
+
+  @override
+  Widget build(BuildContext context) {
+    // Laid out once at the real label size (pt) and scaled as a picture, so
+    // line breaks are identical to the print at every labels-per-page count.
+    final fmt = PrintService.qrLabelFormat;
+    final shownTitle = title.trim().isEmpty ? '—' : title.trim();
+    TextStyle style(double size, FontWeight w) => text.bodyMedium!.copyWith(
+      color: Colors.black,
+      fontWeight: w,
+      fontSize: size,
+      height: 1.15,
+    );
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: cutLine
+            ? Border.all(color: const Color(0xFFBDBDBD), width: 0.5)
+            : null,
+      ),
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: fmt.width,
+          height: fmt.height,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (company.trim().isNotEmpty) ...[
+                  Text(
+                    company.trim(),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: style(
+                      PrintService.labelCompanyFit(company),
+                      FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+                QrImageView(
+                  data: qrData,
+                  size: PrintService.labelQrSize,
+                  padding: EdgeInsets.zero,
+                  backgroundColor: Colors.white,
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.square,
+                    color: Colors.black,
+                  ),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: Colors.black,
+                  ),
+                  errorCorrectionLevel: QrErrorCorrectLevel.M,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  shownTitle,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  style: style(
+                    PrintService.labelTitleSize(shownTitle),
+                    FontWeight.w700,
+                  ),
+                ),
+                if (subtitle.trim().isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle.trim(),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: style(
+                      PrintService.labelSubtitleSize(subtitle),
+                      FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -631,7 +891,9 @@ class _PerPagePicker extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Icon(
-                  n == 1 ? Icons.crop_portrait_rounded : Icons.grid_view_rounded,
+                  n == 1
+                      ? Icons.crop_portrait_rounded
+                      : Icons.grid_view_rounded,
                   size: 18,
                   color: p.textMuted,
                 ),
