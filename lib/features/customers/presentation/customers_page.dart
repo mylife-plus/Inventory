@@ -1608,7 +1608,7 @@ class _ContactRow extends StatelessWidget {
         AppHaptics.light();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Copied')),
+            SnackBar(content: Text(ProviderScope.containerOf(context).read(tProvider)('copied'))),
           );
         }
       },
@@ -1668,7 +1668,7 @@ class _CustomFieldRow extends StatelessWidget {
         AppHaptics.light();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Copied')),
+            SnackBar(content: Text(ProviderScope.containerOf(context).read(tProvider)('copied'))),
           );
         }
       },

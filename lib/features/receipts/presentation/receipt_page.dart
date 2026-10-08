@@ -252,6 +252,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
         sale: sale,
         money: money.format,
         format: PrintService.receiptFormatFor(paper),
+        t: t.call,
       );
       await PrintService.layoutReceiptPdf(
         bytes: pdf.bytes,
@@ -405,7 +406,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     b
       ..writeln('------------------------------')
       ..writeln('${t('receipt')} ${sale.id.substring(0, 8).toUpperCase()}')
-      ..writeln(sale.createdAt.toLocal())
+      ..writeln(sale.createdAt.toLocal().toString().split('.').first)
       ..writeln('------------------------------');
     for (final line in sale.lines) {
       b.writeln(
@@ -468,7 +469,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Add your shop details before showing the receipt.',
+                t('shop_details_needed'),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: p.textSecondary, height: 1.35),
               ),

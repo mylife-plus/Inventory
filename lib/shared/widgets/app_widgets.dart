@@ -974,7 +974,7 @@ class CardTotalLine extends ConsumerWidget {
 }
 
 /// Unit price line: amount + currency bright; only "per" muted.
-class PriceUnitLine extends StatelessWidget {
+class PriceUnitLine extends ConsumerWidget {
   const PriceUnitLine({
     super.key,
     required this.amount,
@@ -987,9 +987,10 @@ class PriceUnitLine extends StatelessWidget {
   final String? unit;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final p = AppPalette.of(context);
     final hasUnit = unit != null && unit!.isNotEmpty;
+    final per = ref.watch(tProvider)('per');
     final bright = TextStyle(
       color: p.textPrimary,
       fontSize: 14,
@@ -1008,7 +1009,7 @@ class PriceUnitLine extends StatelessWidget {
           TextSpan(text: amount, style: bright),
           TextSpan(text: ' $symbol', style: bright),
           if (hasUnit) ...[
-            TextSpan(text: ' per ', style: muted),
+            TextSpan(text: ' $per ', style: muted),
             TextSpan(text: unit, style: bright),
           ],
         ],
@@ -1151,7 +1152,7 @@ class CustomerListCard extends ConsumerWidget {
       AppHaptics.light();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Copied')),
+          SnackBar(content: Text(ProviderScope.containerOf(context).read(tProvider)('copied'))),
         );
       }
     }
