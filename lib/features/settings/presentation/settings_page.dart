@@ -72,9 +72,8 @@ class SettingsPage extends ConsumerWidget {
                     _SettingsRow(
                       leading: const Text('🤝', style: TextStyle(fontSize: 20)),
                       title: t('feedback'),
-                      onTap: () => launchUrl(
-                        Uri.parse('mailto:sales@softthrive.com'),
-                      ),
+                      onTap: () =>
+                          launchUrl(Uri.parse('mailto:sales@softthrive.com')),
                     ),
                   ],
                 ),
@@ -178,14 +177,20 @@ class SettingsPage extends ConsumerWidget {
                       onTap: () => context.go('/turnover'),
                     ),
                     _SettingsRow(
-                      leading: Icon(Icons.receipt_long_rounded,
-                          color: p.textPrimary, size: 22),
+                      leading: Icon(
+                        Icons.receipt_long_rounded,
+                        color: p.textPrimary,
+                        size: 22,
+                      ),
                       title: t('receipt_details'),
                       onTap: () => context.push('/settings/receipt'),
                     ),
                     _SettingsRow(
-                      leading: Icon(Icons.qr_code_2_rounded,
-                          color: p.textPrimary, size: 22),
+                      leading: Icon(
+                        Icons.qr_code_2_rounded,
+                        color: p.textPrimary,
+                        size: 22,
+                      ),
                       title: t('qr_link'),
                       trailing: ConstrainedBox(
                         constraints: BoxConstraints(
@@ -207,8 +212,11 @@ class SettingsPage extends ConsumerWidget {
                       onTap: () => _editQrLink(context, ref, s),
                     ),
                     _SettingsRow(
-                      leading: Icon(Icons.description_rounded,
-                          color: p.textPrimary, size: 22),
+                      leading: Icon(
+                        Icons.description_rounded,
+                        color: p.textPrimary,
+                        size: 22,
+                      ),
                       title: t('receipts'),
                       onTap: () => context.push('/receipts'),
                     ),
@@ -237,59 +245,78 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _pickLanguage(
-    BuildContext context,
-    WidgetRef ref,
-    S t,
-  ) async {
-    final p = AppPalette.of(context);
-    final code = await showModalBottomSheet<String>(
+  Future<void> _pickLanguage(BuildContext context, WidgetRef ref, S t) async {
+    // Shared sheet shell (drag handle + close button) like every other picker.
+    final code = await showAppSheet<String>(
       context: context,
-      backgroundColor: p.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) {
+        final p = AppPalette.of(ctx);
         final prefs =
             ref.read(appPrefsProvider).valueOrNull ?? const AppPrefs();
         return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(8, 12, 8, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                child: Text(
-                  t('language'),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                    color: p.textPrimary,
-                  ),
-                ),
-              ),
-              ...S.supported.entries.map(
-                (e) {
-                  final selected = e.key == prefs.localeCode;
-                  return ListTile(
-                    leading: Text(
-                      _langFlags[e.key] ?? '🌐',
-                      style: const TextStyle(fontSize: 22),
-                    ),
-                    title: Text(
-                      e.value,
-                      style: TextStyle(
-                        fontWeight:
-                            selected ? FontWeight.w800 : FontWeight.w600,
-                        color: p.textPrimary,
+              AppSheetHeader(title: t('language')),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                  children: [
+                    for (final e in S.supported.entries)
+                      Builder(
+                        builder: (_) {
+                          final selected = e.key == prefs.localeCode;
+                          return Pressable(
+                            onTap: () => Navigator.pop(ctx, e.key),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 13,
+                              ),
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: p.cardElevated,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: selected ? p.fabBorder : p.stroke,
+                                  width: selected ? 1.4 : 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    _langFlags[e.key] ?? '🌐',
+                                    style: const TextStyle(fontSize: 22),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      e.value,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontWeight: selected
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
+                                        fontSize: 16,
+                                        color: p.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  if (selected)
+                                    Icon(
+                                      Icons.check_rounded,
+                                      color: p.neon,
+                                      size: 22,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ),
-                    trailing: selected
-                        ? Icon(Icons.check_circle_rounded, color: p.neon)
-                        : null,
-                    onTap: () => Navigator.pop(ctx, e.key),
-                  );
-                },
+                  ],
+                ),
               ),
             ],
           ),
@@ -297,6 +324,7 @@ class SettingsPage extends ConsumerWidget {
       },
     );
     if (code != null) {
+      AppHaptics.selection();
       await ref.read(appPrefsProvider.notifier).setLocale(code);
     }
   }
@@ -363,10 +391,7 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref,
     ShopSettings s,
   ) async {
-    final value = await showCurrencyPicker(
-      context,
-      current: s.currencySymbol,
-    );
+    final value = await showCurrencyPicker(context, current: s.currencySymbol);
     if (value != null && value.isNotEmpty) {
       await ref
           .read(shopSettingsProvider.notifier)
@@ -374,32 +399,26 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
-  Future<void> _saveAppData(
-    BuildContext context,
-    WidgetRef ref,
-    S t,
-  ) async {
+  Future<void> _saveAppData(BuildContext context, WidgetRef ref, S t) async {
     try {
-      await AppBackupService(ref.read(databaseProvider)).shareBackup(context: context);
+      await AppBackupService(
+        ref.read(databaseProvider),
+      ).shareBackup(context: context);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('backup_saved'))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(t('backup_saved'))));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${t('backup_failed')}: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${t('backup_failed')}: $e')));
       }
     }
   }
 
-  Future<void> _uploadAppData(
-    BuildContext context,
-    WidgetRef ref,
-    S t,
-  ) async {
+  Future<void> _uploadAppData(BuildContext context, WidgetRef ref, S t) async {
     final ok = await showAppConfirmDialog(
       context: context,
       title: t('upload_app_data'),
@@ -410,8 +429,9 @@ class SettingsPage extends ConsumerWidget {
     if (!ok) return;
 
     try {
-      final restored =
-          await AppBackupService(ref.read(databaseProvider)).pickAndRestore();
+      final restored = await AppBackupService(
+        ref.read(databaseProvider),
+      ).pickAndRestore();
       if (!restored) return;
       ref.invalidate(shopSettingsProvider);
       ref.invalidate(inventoryItemsProvider);
@@ -419,16 +439,16 @@ class SettingsPage extends ConsumerWidget {
       ref.invalidate(customersProvider);
       ref.invalidate(salesProvider);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('backup_restored'))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(t('backup_restored'))));
         context.go('/inventory');
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${t('backup_failed')}: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${t('backup_failed')}: $e')));
       }
     }
   }
@@ -454,11 +474,7 @@ class SettingsPage extends ConsumerWidget {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.label,
-    this.emoji,
-    this.asset,
-  });
+  const _SectionHeader({required this.label, this.emoji, this.asset});
 
   final String label;
   final String? emoji;
@@ -712,7 +728,9 @@ class _ReceiptDetailsSettingsPageState
     try {
       final current = await ref.read(shopRepositoryProvider).get();
       final vatRaw = _vat.text.replaceAll('%', '').replaceAll(',', '.').trim();
-      await ref.read(shopSettingsProvider.notifier).save(
+      await ref
+          .read(shopSettingsProvider.notifier)
+          .save(
             current.copyWith(
               companyName: _company.text.trim(),
               street: _joinStreet(_street.text, _nr.text),
@@ -793,7 +811,7 @@ class _ReceiptDetailsSettingsPageState
                     keyboardType: TextInputType.streetAddress,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(labelText: 'Street'),
-                                      ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -802,7 +820,7 @@ class _ReceiptDetailsSettingsPageState
                     keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(labelText: 'Nr.'),
-                                      ),
+                  ),
                 ),
               ],
             ),
@@ -815,7 +833,7 @@ class _ReceiptDetailsSettingsPageState
                     decoration: const InputDecoration(labelText: 'ZIP'),
                     keyboardType: TextInputType.number,
                     textInputAction: TextInputAction.next,
-                                      ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -826,7 +844,7 @@ class _ReceiptDetailsSettingsPageState
                     keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(labelText: 'City'),
-                                      ),
+                  ),
                 ),
               ],
             ),
@@ -844,16 +862,18 @@ class _ReceiptDetailsSettingsPageState
                 width: MediaQuery.sizeOf(context).width * 0.42,
                 child: TextFormField(
                   controller: _vat,
-                  decoration:
-                      const InputDecoration(labelText: 'VAT Tax Rate'),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'VAT Tax Rate'),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   textInputAction: TextInputAction.next,
                   validator: (v) {
                     // Optional — but must be a number when filled in.
                     if (v == null || v.trim().isEmpty) return null;
-                    final raw =
-                        v.replaceAll('%', '').replaceAll(',', '.').trim();
+                    final raw = v
+                        .replaceAll('%', '')
+                        .replaceAll(',', '.')
+                        .trim();
                     if (double.tryParse(raw) == null) return t('required');
                     return null;
                   },
