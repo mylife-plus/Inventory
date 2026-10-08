@@ -22,7 +22,9 @@ enum TurnoverPeriod { w2, m1, m3, m6, y1, y2, all }
 
 enum TurnoverSortKey { amount, recent }
 
-const _kDefaultTurnoverSort = SortState<TurnoverSortKey>(TurnoverSortKey.amount);
+const _kDefaultTurnoverSort = SortState<TurnoverSortKey>(
+  TurnoverSortKey.amount,
+);
 
 class _TurnoverItemAgg {
   const _TurnoverItemAgg({
@@ -57,6 +59,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
   DateTime? _customFrom;
   DateTime? _customTo;
   String? _categoryFilter;
+
   /// Slider window within the selected period (0–1 of period span).
   RangeValues _slider = const RangeValues(0, 1);
   bool get _usingCustomRange => _customFrom != null || _customTo != null;
@@ -148,8 +151,8 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
         final lastSaleAt = prev == null
             ? sale.createdAt
             : (sale.createdAt.isAfter(prev.lastSaleAt)
-                ? sale.createdAt
-                : prev.lastSaleAt);
+                  ? sale.createdAt
+                  : prev.lastSaleAt);
         itemMap[line.itemId] = _TurnoverItemAgg(
           itemId: line.itemId,
           title: line.title,
@@ -165,8 +168,8 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
     final items = itemMap.values.toList();
     int cmp(_TurnoverItemAgg a, _TurnoverItemAgg b) =>
         _sort.key == TurnoverSortKey.recent
-            ? b.lastSaleAt.compareTo(a.lastSaleAt)
-            : b.revenue.compareTo(a.revenue);
+        ? b.lastSaleAt.compareTo(a.lastSaleAt)
+        : b.revenue.compareTo(a.revenue);
     items.sort((a, b) => _sort.reversed ? cmp(b, a) : cmp(a, b));
     return items;
   }
@@ -180,14 +183,20 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
     });
   }
 
-  String _fmtShort(DateTime d) {
-    // Month in the app language ("Okt." in German); strip the locale's own dot
-    // so it is never doubled.
-    final m = DateFormat.MMM(ref.read(tProvider).code)
-        .format(d)
-        .replaceAll('.', '');
-    return '${d.day.toString().padLeft(2, '0')}. $m. ${d.year}';
+  /// X-axis label for a `yyyy-MM-dd` day bucket, picked by how long the
+  /// shown range is: day + month for up to ~3 months ("8.10." / "10/8"),
+  /// month for up to a year ("Okt"), otherwise month + year ("Okt 26").
+  String _barLabel(String day, int spanDays, String locale) {
+    final d = DateTime.tryParse(day);
+    if (d == null) return day;
+    if (spanDays <= 95) return DateFormat.Md(locale).format(d);
+    if (spanDays <= 366) {
+      return DateFormat.MMM(locale).format(d).replaceAll('.', '');
+    }
+    return DateFormat('MMM yy', locale).format(d).replaceAll('.', '');
   }
+
+  String _fmtShort(DateTime d) => formatDateShort(d, ref.read(tProvider).code);
 
   Future<void> _showSortSheet() async {
     final t = ref.read(tProvider);
@@ -324,9 +333,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                   loading: () => const AppLoader(),
                   error: (e, _) => Center(child: Text('$e')),
                   data: (inventory) {
-                    final inventoryById = {
-                      for (final i in inventory) i.id: i,
-                    };
+                    final inventoryById = {for (final i in inventory) i.id: i};
 
                     final sales = allSales
                         .where((s) => _saleInRange(s, range.$1, range.$2))
@@ -344,8 +351,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                     final q = _search.text.trim().toLowerCase();
                     final items = _aggregateItems(sales, inventoryById)
                         .where(
-                          (i) =>
-                              q.isEmpty || i.title.toLowerCase().contains(q),
+                          (i) => q.isEmpty || i.title.toLowerCase().contains(q),
                         )
                         .toList();
 
@@ -360,8 +366,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                       final mk =
                           '${d.year}-${d.month.toString().padLeft(2, '0')}';
                       monthBuckets[mk] = (monthBuckets[mk] ?? 0) + s.total;
-                      final dk =
-                          '$mk-${d.day.toString().padLeft(2, '0')}';
+                      final dk = '$mk-${d.day.toString().padLeft(2, '0')}';
                       dayBuckets[dk] = (dayBuckets[dk] ?? 0) + s.total;
                     }
                     double avgOf(Iterable<double> values) {
@@ -376,18 +381,16 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                     Widget buildItemCard(_TurnoverItemAgg item) {
                       final inv = inventoryById[item.itemId];
                       final badge = formatQty(item.quantity);
-                      final amountOnly =
-                          money.formatAmount(item.unitPrice).trim();
+                      final amountOnly = money
+                          .formatAmount(item.unitPrice)
+                          .trim();
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: MediaListCard(
                           onTap: () =>
                               context.push('/inventory/item/${item.itemId}'),
-                          thumb: CardThumb(
-                            path: inv?.photoPath,
-                            badge: badge,
-                          ),
+                          thumb: CardThumb(path: inv?.photoPath, badge: badge),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(6, 10, 12, 8),
                             child: Column(
@@ -474,11 +477,13 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                           ..sort((a, b) => b.compareTo(a));
                         for (final month in sortedMonths) {
                           final list = months[month]!;
-                          final monthTotal =
-                              list.fold<double>(0, (s, i) => s + i.revenue);
-                          final monthName = DateFormat.MMMM(t.code).format(
-                            DateTime(year, month),
+                          final monthTotal = list.fold<double>(
+                            0,
+                            (s, i) => s + i.revenue,
                           );
+                          final monthName = DateFormat.MMMM(
+                            t.code,
+                          ).format(DateTime(year, month));
                           out.add(
                             SectionHeader(
                               title: monthName,
@@ -498,12 +503,13 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                       return out;
                     }
 
-                    final chartFrom = range.$1 ??
+                    final chartFrom =
+                        range.$1 ??
                         (sales.isEmpty
                             ? DateTime.now()
                             : sales
-                                .map((s) => s.createdAt)
-                                .reduce((a, b) => a.isBefore(b) ? a : b));
+                                  .map((s) => s.createdAt)
+                                  .reduce((a, b) => a.isBefore(b) ? a : b));
                     final chartTo = range.$2 ?? DateTime.now();
                     final chartRangeLabel =
                         '${_fmtShort(chartFrom)} - ${_fmtShort(chartTo)}';
@@ -548,16 +554,12 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                                       );
                                   final exportItems = await ref
                                       .read(saleRepositoryProvider)
-                                      .soldItems(
-                                        from: range.$1,
-                                        to: range.$2,
-                                      );
+                                      .soldItems(from: range.$1, to: range.$2);
                                   await CsvExportService().exportTurnover(
                                     context: context,
                                     items: exportItems,
                                     sales: exportSales,
-                                    currency:
-                                        settings?.currencySymbol ?? '€',
+                                    currency: settings?.currencySymbol ?? '€',
                                     companyName: settings?.companyName,
                                     from: range.$1,
                                     to: range.$2,
@@ -621,13 +623,13 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                                             drawVerticalLine: false,
                                             getDrawingHorizontalLine: (v) =>
                                                 FlLine(
-                                              color: p.stroke
-                                                  .withValues(alpha: 0.55),
-                                              strokeWidth: 1,
-                                            ),
+                                                  color: p.stroke.withValues(
+                                                    alpha: 0.55,
+                                                  ),
+                                                  strokeWidth: 1,
+                                                ),
                                           ),
-                                          borderData:
-                                              FlBorderData(show: false),
+                                          borderData: FlBorderData(show: false),
                                           titlesData: FlTitlesData(
                                             topTitles: const AxisTitles(
                                               sideTitles: SideTitles(
@@ -644,10 +646,8 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                                                 showTitles: true,
                                                 reservedSize: 34,
                                                 getTitlesWidget: (v, meta) {
-                                                  if (v == 0 ||
-                                                      v == meta.max) {
-                                                    return const SizedBox
-                                                        .shrink();
+                                                  if (v == 0 || v == meta.max) {
+                                                    return const SizedBox.shrink();
                                                   }
                                                   final label = v >= 1000
                                                       ? '${(v / 1000).toStringAsFixed(v % 1000 == 0 ? 0 : 1)}k'
@@ -669,26 +669,28 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                                                 showTitles: true,
                                                 reservedSize: 22,
                                                 interval: () {
-                                                  final n =
-                                                      chartValues.length;
+                                                  final n = chartValues.length;
                                                   if (n <= 6) return 1.0;
-                                                  return (n / 5)
-                                                      .ceilToDouble();
+                                                  return (n / 5).ceilToDouble();
                                                 }(),
                                                 getTitlesWidget: (v, meta) {
                                                   final i = v.round();
                                                   if (i < 0 ||
                                                       i >= days.length) {
-                                                    return const SizedBox
-                                                        .shrink();
+                                                    return const SizedBox.shrink();
                                                   }
-                                                  final y =
-                                                      days[i].split('-').first;
+                                                  final y = _barLabel(
+                                                    days[i],
+                                                    chartTo
+                                                        .difference(chartFrom)
+                                                        .inDays,
+                                                    t.code,
+                                                  );
                                                   return Padding(
                                                     padding:
                                                         const EdgeInsets.only(
-                                                      top: 4,
-                                                    ),
+                                                          top: 4,
+                                                        ),
                                                     child: Text(
                                                       y,
                                                       style: TextStyle(
@@ -704,23 +706,25 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                                             ),
                                           ),
                                           barGroups: [
-                                            for (var i = 0;
-                                                i < chartValues.length;
-                                                i++)
+                                            for (
+                                              var i = 0;
+                                              i < chartValues.length;
+                                              i++
+                                            )
                                               BarChartGroupData(
                                                 x: i,
                                                 barRods: [
                                                   BarChartRodData(
                                                     toY: chartValues[i],
                                                     color: p.neon,
-                                                    width: chartValues.length >
-                                                            40
+                                                    width:
+                                                        chartValues.length > 40
                                                         ? 4
                                                         : 8,
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                      3,
-                                                    ),
+                                                          3,
+                                                        ),
                                                   ),
                                                 ],
                                               ),
@@ -732,27 +736,33 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              for (final e in [
-                                (TurnoverPeriod.w2, '2w'),
-                                (TurnoverPeriod.m1, '1m'),
-                                (TurnoverPeriod.m3, '3m'),
-                                (TurnoverPeriod.m6, '6m'),
-                                (TurnoverPeriod.y1, '1y'),
-                                (TurnoverPeriod.y2, '2y'),
-                                (TurnoverPeriod.all, 'All'),
-                              ])
-                                _PeriodChip(
-                                  label: e.$2,
-                                  selected: !_usingCustomRange &&
-                                      _period == e.$1,
-                                  onTap: () => _selectPeriod(e.$1),
+                        // Equal-width chips that always fit the row in every
+                        // language (labels scale down instead of overflowing).
+                        Row(
+                          children: [
+                            for (final (n, e) in [
+                              (TurnoverPeriod.w2, t('range_2w')),
+                              (TurnoverPeriod.m1, t('range_1m')),
+                              (TurnoverPeriod.m3, t('range_3m')),
+                              (TurnoverPeriod.m6, t('range_6m')),
+                              (TurnoverPeriod.y1, t('range_1y')),
+                              (TurnoverPeriod.y2, t('range_2y')),
+                              (TurnoverPeriod.all, t('range_all')),
+                            ].indexed)
+                              Expanded(
+                                child: Padding(
+                                  padding: EdgeInsets.only(
+                                    right: n == 6 ? 0 : 6,
+                                  ),
+                                  child: _PeriodChip(
+                                    label: e.$2,
+                                    selected:
+                                        !_usingCustomRange && _period == e.$1,
+                                    onTap: () => _selectPeriod(e.$1),
+                                  ),
                                 ),
-                            ],
-                          ),
+                              ),
+                          ],
                         ),
                         if (!_usingCustomRange) ...[
                           const SizedBox(height: 2),
@@ -760,12 +770,13 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                             data: SliderThemeData(
                               trackHeight: 5,
                               activeTrackColor: p.neon,
-                              inactiveTrackColor:
-                                  p.neon.withValues(alpha: 0.28),
-                              overlayColor: const Color(0xFFFFD54F)
-                                  .withValues(alpha: 0.18),
-                              rangeThumbShape:
-                                  const RoundRangeSliderThumbShape(
+                              inactiveTrackColor: p.neon.withValues(
+                                alpha: 0.28,
+                              ),
+                              overlayColor: const Color(
+                                0xFFFFD54F,
+                              ).withValues(alpha: 0.18),
+                              rangeThumbShape: const RoundRangeSliderThumbShape(
                                 enabledThumbRadius: 12,
                               ),
                               thumbColor: const Color(0xFFFFD54F),
@@ -797,8 +808,8 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                           sortActive: _sort != _kDefaultTurnoverSort,
                           filterActive:
                               _usingCustomRange || _categoryFilter != null,
-                          searchActive: _showSearch ||
-                              _search.text.trim().isNotEmpty,
+                          searchActive:
+                              _showSearch || _search.text.trim().isNotEmpty,
                         ),
                         if (_showSearch)
                           AppSearchField(
@@ -969,24 +980,23 @@ class _PeriodChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = AppPalette.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Pressable(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? p.neon : p.card,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected ? p.neon : p.stroke,
-            ),
-          ),
+    return Pressable(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? p.neon : p.card,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: selected ? p.neon : p.stroke),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
           child: Text(
             label,
             textAlign: TextAlign.center,
+            maxLines: 1,
             style: TextStyle(
               fontWeight: FontWeight.w700,
               fontSize: 12,
