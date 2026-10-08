@@ -1113,7 +1113,13 @@ class ReceiptsYearPage extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              sale.customerName ?? t('guest'),
+                              // 'Guest' is the stored sentinel; show it in
+                              // the app language.
+                              (sale.customerName == null ||
+                                      sale.customerName!.trim().isEmpty ||
+                                      sale.customerName == 'Guest')
+                                  ? t('guest')
+                                  : sale.customerName!,
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 color: p.textPrimary,
