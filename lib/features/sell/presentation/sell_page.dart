@@ -391,7 +391,10 @@ class _SellPageState extends ConsumerState<SellPage> {
               color: p.textSecondary,
             ),
           ),
-          centerTitle: true,
+          // Left-aligned right after the scanner icon like every other
+          // screen (only Add Items is centered, per the client).
+          centerTitle: false,
+          titleSpacing: 2,
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1285,7 +1288,7 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
                                   child: Text(
-                                    'Camera error: ${error.errorCode}\nAllow camera access in Settings.',
+                                    ref.read(tProvider).tr('camera_error', {'code': '${error.errorCode}'}),
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(color: Colors.white),
                                   ),
