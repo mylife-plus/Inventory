@@ -651,6 +651,8 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                 controller: entry.controller,
                 decoration: InputDecoration(
                   labelText: entry.label,
+                  // Label always on top (no icon), value typed inside.
+                  floatingLabelBehavior: FloatingLabelBehavior.always,
                   hintText: t('field_value'),
                   suffixIcon: IconButton(
                     tooltip: t('delete'),
@@ -1648,6 +1650,8 @@ class _ContactRow extends StatelessWidget {
   }
 }
 
+/// Custom field on the profile: same input style as every text field in the
+/// app — label on top (floating on the border), value inside, no icon.
 class _CustomFieldRow extends StatelessWidget {
   const _CustomFieldRow({required this.label, required this.value});
 
@@ -1668,47 +1672,19 @@ class _CustomFieldRow extends StatelessWidget {
           );
         }
       },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: p.cardElevated,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: p.stroke),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          contentPadding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
         ),
-        // Same single-line layout/height as the contact rows above.
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(kCustomFieldIcon, size: 26, color: p.neon),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '$label  ',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: p.textMuted,
-                      ),
-                    ),
-                    TextSpan(
-                      text: value,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                        color: p.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        child: Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+            color: p.textPrimary,
+          ),
         ),
       ),
     );
