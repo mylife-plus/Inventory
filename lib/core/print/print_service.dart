@@ -37,10 +37,12 @@ class PrintService {
   static Future<({pw.Font regular, pw.Font bold})> _fonts() async {
     final cached = _fontCache;
     if (cached != null) return cached;
-    final regularData =
-        await rootBundle.load('assets/google_fonts/Inter-Regular.ttf');
-    final boldData =
-        await rootBundle.load('assets/google_fonts/Inter-Bold.ttf');
+    final regularData = await rootBundle.load(
+      'assets/google_fonts/Inter-Regular.ttf',
+    );
+    final boldData = await rootBundle.load(
+      'assets/google_fonts/Inter-Bold.ttf',
+    );
     final fonts = (
       regular: pw.Font.ttf(regularData),
       bold: pw.Font.ttf(boldData),
@@ -68,6 +70,7 @@ class PrintService {
   static Future<void> printQrLabel({
     required String title,
     required String subtitle,
+
     /// Exact QR content (see `QrPayload.labelData`) — same as the preview.
     required String qrData,
     String? companyName,
@@ -136,6 +139,7 @@ class PrintService {
     required String qrData,
     String? companyName,
     PdfPageFormat? format,
+
     /// How many copies of the label to lay out on one page (grid). 1 keeps
     /// the single-sticker page (A6 on Android, 70×100 mm on iOS).
     int perPage = 1,
@@ -282,14 +286,14 @@ class PrintService {
     );
     final image = pw.MemoryImage(png);
     pw.Widget cell() => pw.Container(
-          width: grid.labelW,
-          height: grid.labelH,
-          decoration: pw.BoxDecoration(
-            color: PdfColors.white,
-            border: pw.Border.all(color: PdfColors.grey400, width: 0.4),
-          ),
-          child: pw.Image(image, fit: pw.BoxFit.contain),
-        );
+      width: grid.labelW,
+      height: grid.labelH,
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColors.grey400, width: 0.4),
+      ),
+      child: pw.Image(image, fit: pw.BoxFit.contain),
+    );
     final rows = <pw.Widget>[];
     var placed = 0;
     for (var r = 0; r < grid.rows && placed < count; r++) {
@@ -301,10 +305,7 @@ class PrintService {
       }
       if (r > 0) rows.add(pw.SizedBox(height: gap));
       rows.add(
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.center,
-          children: cells,
-        ),
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.center, children: cells),
       );
     }
     final doc = pw.Document();
@@ -325,10 +326,11 @@ class PrintService {
 
   static void _validatePdf(Uint8List bytes, String label) {
     if (bytes.length < _minPdfBytes) {
-      throw StateError('QR label PDF too small ($label: ${bytes.length} bytes)');
+      throw StateError(
+        'QR label PDF too small ($label: ${bytes.length} bytes)',
+      );
     }
-    if (bytes.length < 5 ||
-        String.fromCharCodes(bytes.take(5)) != '%PDF-') {
+    if (bytes.length < 5 || String.fromCharCodes(bytes.take(5)) != '%PDF-') {
       throw StateError('QR label PDF missing header ($label)');
     }
   }
@@ -362,8 +364,11 @@ class PrintService {
       companyName: company,
       format: qrLabelFormat,
     );
-    final page =
-        await Printing.raster(vector, pages: const [0], dpi: _rasterDpi).first;
+    final page = await Printing.raster(
+      vector,
+      pages: const [0],
+      dpi: _rasterDpi,
+    ).first;
     final png = await page.toPng();
     if (png.length < _minPngBytes) {
       throw StateError('QR label PNG too small (${png.length} bytes)');
@@ -451,8 +456,11 @@ class PrintService {
   static Future<Uint8List?> rasterQrLabelPreview(Uint8List pdfBytes) async {
     if (pdfBytes.length < _minPdfBytes) return null;
     try {
-      final page =
-          await Printing.raster(pdfBytes, pages: const [0], dpi: 140).first;
+      final page = await Printing.raster(
+        pdfBytes,
+        pages: const [0],
+        dpi: 140,
+      ).first;
       return page.toPng();
     } catch (e, st) {
       debugPrint('QR label raster failed: $e\n$st');
@@ -545,10 +553,10 @@ class PrintService {
   static const String _receiptPaperPrefKey = 'receipt_paper';
 
   static PdfPageFormat receiptFormatFor(String id) => switch (id) {
-        receiptPaperRoll80 => PdfPageFormat.roll80,
-        receiptPaperRoll58 => PdfPageFormat.roll57,
-        _ => PdfPageFormat.a4,
-      };
+    receiptPaperRoll80 => PdfPageFormat.roll80,
+    receiptPaperRoll58 => PdfPageFormat.roll57,
+    _ => PdfPageFormat.a4,
+  };
 
   static Future<String> lastReceiptPaper() async {
     try {
@@ -576,8 +584,17 @@ class PrintService {
     required Sale sale,
     required String Function(num) money,
     PdfPageFormat format = PdfPageFormat.roll80,
+
+    /// App translations (same labels as the on-screen receipt). English
+    /// fallbacks when omitted (tests).
+    String Function(String key)? t,
   }) async {
     final fonts = await _fonts();
+    String label(String key, String fallback) {
+      final v = t?.call(key);
+      return (v == null || v.isEmpty || v == key) ? fallback : v;
+    }
+
     final roll = !format.height.isFinite;
     final qrData = shop.receiptQrData;
     // Thermal rolls need small type; A4 gets readable sizes.
@@ -599,10 +616,8 @@ class PrintService {
         build: (context) {
           pw.TextStyle body([double size = 8]) =>
               pw.TextStyle(font: fonts.regular, fontSize: size * scale);
-          pw.TextStyle bold([double size = 9]) => pw.TextStyle(
-                font: fonts.bold,
-                fontSize: size * scale,
-              );
+          pw.TextStyle bold([double size = 9]) =>
+              pw.TextStyle(font: fonts.bold, fontSize: size * scale);
 
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -632,7 +647,7 @@ class PrintService {
                 ),
               pw.Divider(thickness: 0.6),
               pw.Text(
-                'Receipt ${sale.id.substring(0, 8).toUpperCase()}',
+                '${label('receipt', 'Receipt')} ${sale.id.substring(0, 8).toUpperCase()}',
                 style: bold(9),
               ),
               pw.Text(
@@ -649,7 +664,7 @@ class PrintService {
                     children: [
                       pw.Expanded(
                         child: pw.Text(
-                          '${l.quantity} x ${l.title}',
+                          '${formatQty(l.quantity)} x ${l.title}',
                           style: body(),
                         ),
                       ),
@@ -664,7 +679,7 @@ class PrintService {
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Subtotal', style: body()),
+                    pw.Text(label('subtotal', 'Subtotal'), style: body()),
                     pw.Text(
                       money(
                         VatBreakdown.inclusive(
@@ -680,7 +695,7 @@ class PrintService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text(
-                      'VAT ${formatQty(shop.vatRate)}%',
+                      '${label('vat', 'VAT')} ${formatQty(shop.vatRate)}%',
                       style: body(),
                     ),
                     pw.Text(
@@ -699,7 +714,10 @@ class PrintService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('TOTAL', style: bold(11)),
+                  pw.Text(
+                    label('total', 'Total').toUpperCase(),
+                    style: bold(11),
+                  ),
                   pw.Text(money(sale.total), style: bold(11)),
                 ],
               ),
@@ -717,7 +735,7 @@ class PrintService {
                 pw.SizedBox(height: 6),
               ],
               pw.Text(
-                'Thank you',
+                label('thank_you', 'Thank you'),
                 textAlign: pw.TextAlign.center,
                 style: body(9),
               ),
@@ -760,8 +778,8 @@ class PrintService {
     // thermal print services still offer their roll widths.
     final hint = android
         ? (format.width > PdfPageFormat.a5.width
-            ? PdfPageFormat.a4
-            : PdfPageFormat.a6)
+              ? PdfPageFormat.a4
+              : PdfPageFormat.a6)
         : format;
     await Printing.layoutPdf(
       onLayout: (_) async => bytes,
