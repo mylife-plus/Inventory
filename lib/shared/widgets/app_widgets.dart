@@ -1112,7 +1112,8 @@ class CustomerListCard extends ConsumerWidget {
   final CustomerStats? stats;
   final VoidCallback? onTap;
 
-  /// Guest row: show "NA" instead of numbers.
+  /// Guest row: no purchase/total stats (a guest has no profile); shows a
+  /// short localized "Walk-in customer" note instead.
   final bool naStats;
   final String? photoPath;
 
@@ -1135,12 +1136,10 @@ class CustomerListCard extends ConsumerWidget {
     final p = AppPalette.of(context);
     final t = ref.watch(tProvider);
 
-    final purchaseCount = naStats ? 'NA' : '${stats?.purchaseCount ?? '…'}';
+    final purchaseCount = '${stats?.purchaseCount ?? '…'}';
     const purchaseSize = 13.0;
 
-    final amountText = naStats
-        ? 'NA'
-        : stats == null
+    final amountText = stats == null
         ? '…'
         : money.formatAmount(stats!.totalSpent);
 
@@ -1275,6 +1274,18 @@ class CustomerListCard extends ConsumerWidget {
                       ),
                     ],
                     const Spacer(),
+                    if (naStats)
+                      Text(
+                        t('walk_in_customer'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.textSecondary,
+                          fontWeight: FontWeight.w500,
+                          fontSize: purchaseSize,
+                        ),
+                      )
+                    else
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [

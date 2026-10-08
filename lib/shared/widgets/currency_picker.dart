@@ -4,6 +4,7 @@ import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/currency/currencies.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
+import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
 
@@ -11,24 +12,17 @@ Future<String?> showCurrencyPicker(
   BuildContext context, {
   String? current,
 }) async {
-  final p = AppPalette.of(context);
-  final selected = current ??
-      (ProviderScope.containerOf(context)
-              .read(shopSettingsProvider)
-              .valueOrNull
-              ?.currencySymbol ??
+  final selected =
+      current ??
+      (ProviderScope.containerOf(
+            context,
+          ).read(shopSettingsProvider).valueOrNull?.currencySymbol ??
           '€');
 
-  return showModalBottomSheet<String>(
+  // Shared sheet shell (drag handle + close X) like every other picker.
+  return showAppSheet<String>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: p.card,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-    ),
-    builder: (ctx) {
-      return _CurrencyPickerSheet(initial: selected);
-    },
+    builder: (ctx) => _CurrencyPickerSheet(initial: selected),
   );
 }
 
@@ -42,12 +36,16 @@ Future<void> pickAndSaveCurrency(BuildContext context, WidgetRef ref) async {
   if (picked == null || picked.isEmpty) return;
   if (picked == settings.currencySymbol) return;
   AppHaptics.selection();
-  await ref.read(shopSettingsProvider.notifier).save(
-        settings.copyWith(currencySymbol: picked),
-      );
+  await ref
+      .read(shopSettingsProvider.notifier)
+      .save(settings.copyWith(currencySymbol: picked));
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ref.read(tProvider).tr('currency_set_to', {'code': picked}))),
+      SnackBar(
+        content: Text(
+          ref.read(tProvider).tr('currency_set_to', {'code': picked}),
+        ),
+      ),
     );
   }
 }
@@ -59,93 +57,113 @@ Future<String?> showDecimalSeparatorPicker(
   BuildContext context, {
   String? current,
 }) async {
-  final p = AppPalette.of(context);
   final t = ProviderScope.containerOf(context).read(tProvider);
-  final selected = current ??
-      (ProviderScope.containerOf(context)
-              .read(shopSettingsProvider)
-              .valueOrNull
-              ?.decimalSeparator ??
+  final selected =
+      current ??
+      (ProviderScope.containerOf(
+            context,
+          ).read(shopSettingsProvider).valueOrNull?.decimalSeparator ??
           ',');
 
-  return showModalBottomSheet<String>(
+  // Shared sheet shell (drag handle + close X) like every other picker.
+  return showAppSheet<String>(
     context: context,
-    backgroundColor: p.cardElevated,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-    ),
     builder: (ctx) {
       return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: p.stroke,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppSheetHeader(title: t('decimal_separator')),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final sep in const [',', '.'])
+                    PickerOptionRow(
+                      label: decimalSeparatorLabel(sep),
+                      selected: selected == sep,
+                      onTap: () => Navigator.pop(ctx, sep),
+                    ),
+                ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                t('decimal_separator'),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 17,
-                  color: p.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 14),
-              for (final sep in const [',', '.']) ...[
-                Pressable(
-                  onTap: () => Navigator.pop(ctx, sep),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(
-                      color: p.cardElevated,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: selected == sep ? p.fabBorder : p.stroke,
-                        width: selected == sep ? 1.4 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            decimalSeparatorLabel(sep),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 16,
-                              color: p.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (selected == sep)
-                          Icon(Icons.check_rounded, color: p.neon, size: 22),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
+            ),
+          ],
         ),
       );
     },
   );
+}
+
+/// One choice row in a picker sheet: rounded card, highlighted border and a
+/// check on the current choice (language, decimal separator, currency).
+class PickerOptionRow extends StatelessWidget {
+  const PickerOptionRow({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.leading,
+    this.subtitle,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget? leading;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    return Pressable(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: p.cardElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? p.fabBorder : p.stroke,
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            if (leading != null) ...[leading!, const SizedBox(width: 12)],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      fontSize: 16,
+                      color: p.textPrimary,
+                    ),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: p.textSecondary, fontSize: 12),
+                    ),
+                ],
+              ),
+            ),
+            if (selected) Icon(Icons.check_rounded, color: p.neon, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 Future<void> pickAndSaveDecimalSeparator(
@@ -161,9 +179,9 @@ Future<void> pickAndSaveDecimalSeparator(
   if (picked == null || picked.isEmpty) return;
   if (picked == settings.decimalSeparator) return;
   AppHaptics.selection();
-  await ref.read(shopSettingsProvider.notifier).save(
-        settings.copyWith(decimalSeparator: picked),
-      );
+  await ref
+      .read(shopSettingsProvider.notifier)
+      .save(settings.copyWith(decimalSeparator: picked));
 }
 
 class _CurrencyPickerSheet extends ConsumerStatefulWidget {
@@ -171,7 +189,8 @@ class _CurrencyPickerSheet extends ConsumerStatefulWidget {
   final String initial;
 
   @override
-  ConsumerState<_CurrencyPickerSheet> createState() => _CurrencyPickerSheetState();
+  ConsumerState<_CurrencyPickerSheet> createState() =>
+      _CurrencyPickerSheetState();
 }
 
 class _CurrencyPickerSheetState extends ConsumerState<_CurrencyPickerSheet> {
@@ -203,150 +222,69 @@ class _CurrencyPickerSheetState extends ConsumerState<_CurrencyPickerSheet> {
           c.symbol.toLowerCase().contains(q);
     }).toList();
 
-    final bottom = MediaQuery.viewInsetsOf(context).bottom;
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.72,
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: p.stroke,
-                borderRadius: BorderRadius.circular(99),
+    // showAppSheet already lifts the sheet above the keyboard.
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.72,
+      child: Column(
+        children: [
+          AppSheetHeader(title: t('currency')),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: t('search_currency'),
+                prefixIcon: Icon(Icons.search_rounded, color: p.textMuted),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Row(
-                children: [
-                  Text(
-                    t('currency'),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18,
-                      color: p.textPrimary,
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              itemCount: list.length + 1,
+              itemBuilder: (context, i) {
+                if (i == list.length) {
+                  return _CustomCurrencyTile(
+                    onSubmit: (v) => Navigator.pop(context, v),
+                  );
+                }
+                final c = list[i];
+                final active = c.display == _selected || c.code == _selected;
+                return PickerOptionRow(
+                  label: c.name,
+                  subtitle: c.code,
+                  selected: active,
+                  onTap: () {
+                    AppHaptics.selection();
+                    setState(() => _selected = c.display);
+                    Navigator.pop(context, c.display);
+                  },
+                  leading: Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: p.card,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: p.stroke),
                     ),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, _selected),
                     child: Text(
-                      t('done'),
+                      c.display,
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: p.neon,
+                        fontSize: c.display.length > 3 ? 11 : 14,
+                        color: active ? p.neon : p.textPrimary,
                       ),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                controller: _search,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: t('search_currency'),
-                  prefixIcon: Icon(Icons.search_rounded, color: p.textMuted),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-                itemCount: list.length + 1,
-                separatorBuilder: (_, __) => const SizedBox(height: 6),
-                itemBuilder: (context, i) {
-                  if (i == list.length) {
-                    return _CustomCurrencyTile(
-                      onSubmit: (v) => Navigator.pop(context, v),
-                    );
-                  }
-                  final c = list[i];
-                  final active = c.display == _selected || c.code == _selected;
-                  return Pressable(
-                    onTap: () {
-                      AppHaptics.selection();
-                      setState(() => _selected = c.display);
-                      Navigator.pop(context, c.display);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: active
-                            ? p.neon.withValues(alpha: 0.12)
-                            : p.cardElevated,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: active ? p.neon : p.stroke,
-                          width: active ? 1.4 : 0.9,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: p.card,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: p.stroke),
-                            ),
-                            child: Text(
-                              c.display,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: c.display.length > 3 ? 11 : 14,
-                                color: active ? p.neon : p.textPrimary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  c.name,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: p.textPrimary,
-                                  ),
-                                ),
-                                Text(
-                                  c.code,
-                                  style: TextStyle(
-                                    color: p.textSecondary,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (active)
-                            Icon(Icons.check_circle_rounded, color: p.neon),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -357,7 +295,8 @@ class _CustomCurrencyTile extends ConsumerStatefulWidget {
   final ValueChanged<String> onSubmit;
 
   @override
-  ConsumerState<_CustomCurrencyTile> createState() => _CustomCurrencyTileState();
+  ConsumerState<_CustomCurrencyTile> createState() =>
+      _CustomCurrencyTileState();
 }
 
 class _CustomCurrencyTileState extends ConsumerState<_CustomCurrencyTile> {
