@@ -563,6 +563,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                                     companyName: settings?.companyName,
                                     from: range.$1,
                                     to: range.$2,
+                                    t: t.call,
                                   );
                                 },
                                 icon: Icon(

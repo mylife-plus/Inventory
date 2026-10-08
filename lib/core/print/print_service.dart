@@ -588,6 +588,10 @@ class PrintService {
     /// App translations (same labels as the on-screen receipt). English
     /// fallbacks when omitted (tests).
     String Function(String key)? t,
+
+    /// Friendly localized sale date/time (same as the receipts list). Falls
+    /// back to the plain timestamp when omitted (tests).
+    String? dateText,
   }) async {
     final fonts = await _fonts();
     String label(String key, String fallback) {
@@ -651,7 +655,8 @@ class PrintService {
                 style: bold(9),
               ),
               pw.Text(
-                sale.createdAt.toLocal().toString().split('.').first,
+                dateText ??
+                    sale.createdAt.toLocal().toString().split('.').first,
                 style: body(7),
               ),
               pw.Divider(thickness: 0.6),

@@ -253,6 +253,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
         money: money.format,
         format: PrintService.receiptFormatFor(paper),
         t: t.call,
+        dateText: formatDateTimeShort(sale.createdAt, t.code),
       );
       await PrintService.layoutReceiptPdf(
         bytes: pdf.bytes,
@@ -406,7 +407,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     b
       ..writeln('------------------------------')
       ..writeln('${t('receipt')} ${sale.id.substring(0, 8).toUpperCase()}')
-      ..writeln(sale.createdAt.toLocal().toString().split('.').first)
+      ..writeln(formatDateTimeShort(sale.createdAt, t.code))
       ..writeln('------------------------------');
     for (final line in sale.lines) {
       b.writeln(
@@ -548,7 +549,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 Text(
-                  sale.createdAt.toLocal().toString().split('.').first,
+                  formatDateTimeShort(sale.createdAt, t.code),
                   style:
                       const TextStyle(fontSize: 12, color: Color(0xFF666666)),
                 ),
@@ -831,6 +832,7 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
       companyName: settings?.companyName,
       from: _from,
       to: _to,
+      t: ref.read(tProvider).call,
     );
   }
 
@@ -1061,6 +1063,7 @@ class ReceiptsYearPage extends ConsumerWidget {
         companyName: settings?.companyName,
         from: DateTime(year, 1, 1),
         to: DateTime(year, 12, 31, 23, 59, 59),
+        t: ref.read(tProvider).call,
       );
     }
 

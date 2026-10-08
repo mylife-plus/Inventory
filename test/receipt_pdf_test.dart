@@ -54,6 +54,27 @@ void main() {
     }
   });
 
+  test('receipt with a localized date builds on every paper size', () async {
+    const shop = ShopSettings(companyName: 'Tocca Shop', vatRate: 19);
+    for (final date in ['08. Okt. 2026, 16:07', '08. Oct. 2026, 4:07 PM']) {
+      for (final id in [
+        PrintService.receiptPaperA4,
+        PrintService.receiptPaperRoll80,
+        PrintService.receiptPaperRoll58,
+      ]) {
+        final pdf = await PrintService.buildReceiptPdf(
+          shop: shop,
+          sale: sale,
+          money: money,
+          format: PrintService.receiptFormatFor(id),
+          dateText: date,
+        );
+        expect(utf8.decode(pdf.bytes.sublist(0, 5)), '%PDF-');
+        expect(pdf.bytes.length, greaterThan(800), reason: '$id $date');
+      }
+    }
+  });
+
   test('receipt QR only when a QR-Link is set', () {
     const none = ShopSettings(companyName: 'A');
     const blank = ShopSettings(companyName: 'A', receiptQrLink: '   ');

@@ -96,5 +96,9 @@ String formatDateShort(DateTime d, String locale) {
 
 /// [formatDateShort] plus the time in the locale's clock style,
 /// e.g. "08. Oct. 2026, 4:07 PM" / "08. Okt. 2026, 16:07".
+///
+/// Unicode (narrow) no-break spaces from the locale data are turned into
+/// plain spaces so the text renders with every font, including the PDF one.
 String formatDateTimeShort(DateTime d, String locale) =>
-    '${formatDateShort(d, locale)}, ${DateFormat.jm(locale).format(d.toLocal())}';
+    '${formatDateShort(d, locale)}, ${DateFormat.jm(locale).format(d.toLocal())}'
+        .replaceAll(RegExp('[\u00A0\u202F]'), ' ');
