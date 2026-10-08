@@ -223,9 +223,14 @@ class _CurrencyPickerSheetState extends ConsumerState<_CurrencyPickerSheet> {
           c.symbol.toLowerCase().contains(q);
     }).toList();
 
-    // showAppSheet already lifts the sheet above the keyboard.
+    // showAppSheet already lifts the sheet above the keyboard; cap the height
+    // so the header never slides under the status bar while typing.
+    final view = MediaQueryData.fromView(View.of(context));
+    final maxH =
+        view.size.height - view.viewInsets.bottom - view.padding.top - 16;
+    final h = (view.size.height * 0.72).clamp(200.0, maxH < 200 ? 200.0 : maxH);
     return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.72,
+      height: h,
       child: Column(
         children: [
           AppSheetHeader(title: t('currency')),
