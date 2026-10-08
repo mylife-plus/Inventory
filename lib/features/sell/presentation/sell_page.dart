@@ -139,7 +139,12 @@ class _SellPageState extends ConsumerState<SellPage> {
       _clearEditState();
       ref.read(sellCustomerProvider.notifier).state = null;
       if (!mounted) return;
-      context.go('/sell/receipt/${sale.id}');
+      // Keep the origin (Items Sold list / customer) under the receipt.
+      if (context.canPop()) {
+        context.pushReplacement('/sell/receipt/${sale.id}');
+      } else {
+        context.go('/sell/receipt/${sale.id}');
+      }
     } catch (e) {
       if (!mounted) return;
       final msg = e is StateError ? e.message : '$e';
@@ -192,19 +197,18 @@ class _SellPageState extends ConsumerState<SellPage> {
   }
 
   /// Cancel. While editing a receipt this is a pure no-op on stock and on
-  /// the sale: nothing is written, the edit state is dropped and the user
-  /// returns to the unchanged receipt. Otherwise the cart is discarded.
+  /// the sale: nothing is written and the edit state is dropped. The editor
+  /// replaced the receipt in the history (see `_editSaleItems`), so popping
+  /// returns to where the user was before the receipt (Items Sold list,
+  /// customer purchases); with no history (receipt right after a sale) it
+  /// goes to Inventory — the same place the receipt's own back leads.
+  /// Outside editing the cart is discarded.
   void _cancel() {
     if (_busy) return;
     FocusScope.of(context).unfocus();
-    final editingId = ref.read(editingSaleIdProvider);
     ref.read(cartProvider.notifier).clear();
     ref.read(sellCustomerProvider.notifier).state = null;
     _clearEditState();
-    if (editingId != null) {
-      context.go('/sell/receipt/$editingId');
-      return;
-    }
     if (context.canPop()) {
       context.pop();
     } else {
@@ -233,14 +237,7 @@ class _SellPageState extends ConsumerState<SellPage> {
         .fold<double>(0, (s, l) => s + l.quantity);
     final maxAllowed = item.amount + _editStockBonus(item.id);
     if (inCart + 1 > maxAllowed + 1e-9) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Not enough stock for ${item.title} '
-            '(have ${formatQty(maxAllowed)})',
-          ),
-        ),
-      );
+      _warnStock(context, ref, item, maxAllowed);
       return;
     }
     ref.read(cartProvider.notifier).addItem(item);
@@ -254,14 +251,7 @@ class _SellPageState extends ConsumerState<SellPage> {
     final maxAllowed = item.amount + _editStockBonus(item.id);
     final capped = q > maxAllowed ? maxAllowed : q;
     if (q > maxAllowed + 1e-9) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Not enough stock for ${item.title} '
-            '(have ${formatQty(maxAllowed)})',
-          ),
-        ),
-      );
+      _warnStock(context, ref, item, maxAllowed);
     }
     ref.read(cartProvider.notifier).setQty(item.id, capped);
   }
@@ -777,7 +767,13 @@ class _CartQtyBoxState extends State<_CartQtyBox> {
       _ctrl.text = formatQty(widget.value);
       return;
     }
-    final next = v > widget.max ? widget.max : (v < 0 ? 0.0 : v);
+    if (v > widget.max + 1e-9) {
+      // Let the page show the visible "not enough stock" notice + cap.
+      _ctrl.text = formatQty(widget.max);
+      widget.onChanged(v);
+      return;
+    }
+    final next = v < 0 ? 0.0 : v;
     _ctrl.text = formatQty(next);
     if ((next - widget.value).abs() > 1e-9) widget.onChanged(next);
   }
@@ -900,16 +896,7 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
         .fold<double>(0, (s, l) => s + l.quantity);
     final maxAllowed = _maxFor(item);
     if (inCart + 1 > maxAllowed + 1e-9) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              'Not enough stock for ${item.title} '
-              '(have ${formatQty(maxAllowed)})',
-            ),
-          ),
-        );
+      _warnStock(context, ref, item, maxAllowed);
       return;
     }
     AppHaptics.selection();
@@ -918,6 +905,7 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
 
   void _setQty(InventoryItem item, double q) {
     final maxAllowed = _maxFor(item);
+    if (q > maxAllowed + 1e-9) _warnStock(context, ref, item, maxAllowed);
     final capped = q > maxAllowed ? maxAllowed : q;
     ref.read(cartProvider.notifier).setQty(item.id, capped);
   }
@@ -948,7 +936,8 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          titleSpacing: 16,
+          // Client: "Add Items" is centered (exception to left-aligned titles).
+          centerTitle: true,
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1795,4 +1784,22 @@ class SelectCustomerTileState extends ConsumerState<SelectCustomerTile> {
       },
     );
   }
+}
+
+/// "Not enough stock" warning as a top banner — always visible, even while
+/// the number keyboard is open (a SnackBar sat behind it).
+void _warnStock(
+  BuildContext context,
+  WidgetRef ref,
+  InventoryItem item,
+  double have,
+) {
+  AppHaptics.medium();
+  showTopNotice(
+    context,
+    ref.read(tProvider).tr('not_enough_stock', {
+      'item': item.title,
+      'qty': formatQty(have),
+    }),
+  );
 }

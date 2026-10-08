@@ -1926,3 +1926,146 @@ class SectionAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
 }
+
+// ---------------------------------------------------------------------------
+// Top notice — a short warning banner drawn at the top of the screen in the
+// root overlay, so the keyboard (or a bottom bar) can never cover it.
+// ---------------------------------------------------------------------------
+
+OverlayEntry? _topNoticeEntry;
+
+/// Shows [message] as a banner under the status bar for [duration].
+/// A new notice replaces the current one.
+void showTopNotice(
+  BuildContext context,
+  String message, {
+  IconData icon = Icons.warning_amber_rounded,
+  Duration duration = const Duration(milliseconds: 2800),
+}) {
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay == null) return;
+  _topNoticeEntry?.remove();
+  _topNoticeEntry = null;
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (ctx) => _TopNotice(
+      message: message,
+      icon: icon,
+      duration: duration,
+      onDone: () {
+        if (_topNoticeEntry == entry) {
+          entry.remove();
+          _topNoticeEntry = null;
+        }
+      },
+    ),
+  );
+  _topNoticeEntry = entry;
+  overlay.insert(entry);
+}
+
+class _TopNotice extends StatefulWidget {
+  const _TopNotice({
+    required this.message,
+    required this.icon,
+    required this.duration,
+    required this.onDone,
+  });
+
+  final String message;
+  final IconData icon;
+  final Duration duration;
+  final VoidCallback onDone;
+
+  @override
+  State<_TopNotice> createState() => _TopNoticeState();
+}
+
+class _TopNoticeState extends State<_TopNotice>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.forward();
+    Future.delayed(widget.duration, _dismiss);
+  }
+
+  Future<void> _dismiss() async {
+    if (!mounted) return;
+    await _ctrl.reverse();
+    widget.onDone();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    final top = MediaQuery.paddingOf(context).top + 8;
+    final curved = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+    return Positioned(
+      top: top,
+      left: 16,
+      right: 16,
+      child: FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, -0.4),
+            end: Offset.zero,
+          ).animate(curved),
+          child: Material(
+            color: Colors.transparent,
+            child: GestureDetector(
+              onTap: _dismiss,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: p.cardElevated,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: p.danger, width: 1.2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x55000000),
+                      blurRadius: 18,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Icon(widget.icon, color: p.danger, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        widget.message,
+                        style: TextStyle(
+                          color: p.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          height: 1.25,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

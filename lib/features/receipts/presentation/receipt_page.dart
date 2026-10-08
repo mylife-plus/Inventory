@@ -376,7 +376,14 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
         List<SaleLine>.from(sale.lines);
     ref.read(sellCustomerProvider.notifier).state = null;
     if (!mounted) return;
-    context.go('/sell');
+    // The editor takes the receipt's place in the history, so Cancel (a
+    // plain pop) lands on the screen that opened the receipt — Items Sold
+    // list, customer purchases — never back on this receipt.
+    if (context.canPop()) {
+      context.pushReplacement('/sell');
+    } else {
+      context.go('/sell');
+    }
   }
 
   String _buildReceiptText({
