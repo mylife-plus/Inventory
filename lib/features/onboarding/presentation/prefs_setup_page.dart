@@ -78,9 +78,10 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
       if (!mounted) return;
       context.go('/inventory');
     } catch (e) {
+      debugPrint('Saving preferences failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
+        SnackBar(content: Text(ref.read(tProvider)('save_failed'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);

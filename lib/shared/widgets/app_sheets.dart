@@ -309,7 +309,8 @@ class AppSheetHeader extends StatelessWidget {
             children: [
               if (showClose)
                 IconButton(
-                  tooltip: 'Close',
+                  tooltip: ProviderScope.containerOf(context)
+                      .read(tProvider)('close'),
                   onPressed: () => Navigator.pop(context),
                   icon: Icon(Icons.close_rounded, color: p.textMuted),
                 )

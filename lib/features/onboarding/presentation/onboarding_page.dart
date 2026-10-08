@@ -61,8 +61,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         city: _city.text.trim(),
         phone: _phone.text.trim(),
         vatRate: double.tryParse(_vat.text.replaceAll(',', '.')) ?? 0,
-        currencySymbol:
-            _currency.text.trim().isEmpty ? '€' : _currency.text.trim(),
+        currencySymbol: _currency.text.trim().isEmpty
+            ? '€'
+            : _currency.text.trim(),
         setupComplete: true,
       );
       await ref.read(shopSettingsProvider.notifier).save(settings);
@@ -71,7 +72,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(ref.read(tProvider)('backup_failed'))),
+          SnackBar(content: Text(ref.read(tProvider)('save_failed'))),
         );
       }
     } finally {
@@ -100,19 +101,20 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Set up your shop details for receipts',
+                ref.watch(tProvider)('setup_title'),
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: p.textSecondary,
-                      height: 1.35,
-                    ),
+                  color: p.textSecondary,
+                  height: 1.35,
+                ),
               ),
               const SizedBox(height: 28),
               SectionHeader(title: ref.watch(tProvider)('receipt_details')),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _company,
-                decoration:
-                    const InputDecoration(labelText: 'Company / shop name'),
+                decoration: InputDecoration(
+                  labelText: ref.watch(tProvider)('company_name'),
+                ),
                 validator: (v) => (v == null || v.trim().isEmpty)
                     ? ref.watch(tProvider)('required')
                     : null,
@@ -120,7 +122,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _street,
-                decoration: const InputDecoration(labelText: 'Street'),
+                decoration: InputDecoration(
+                  labelText: ref.watch(tProvider)('street'),
+                ),
               ),
               const SizedBox(height: 12),
               Row(
@@ -128,7 +132,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   Expanded(
                     child: TextFormField(
                       controller: _zip,
-                      decoration: const InputDecoration(labelText: 'ZIP'),
+                      decoration: InputDecoration(
+                        labelText: ref.watch(tProvider)('zip'),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -136,7 +142,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     flex: 2,
                     child: TextFormField(
                       controller: _city,
-                      decoration: const InputDecoration(labelText: 'City'),
+                      decoration: InputDecoration(
+                        labelText: ref.watch(tProvider)('city'),
+                      ),
                     ),
                   ),
                 ],
@@ -144,7 +152,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _phone,
-                decoration: const InputDecoration(labelText: 'Phone number'),
+                decoration: InputDecoration(
+                  labelText: ref.watch(tProvider)('phone_number'),
+                ),
                 keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 12),
@@ -153,8 +163,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   Expanded(
                     child: TextFormField(
                       controller: _vat,
-                      decoration:
-                          const InputDecoration(labelText: 'VAT tax rate %'),
+                      decoration: InputDecoration(
+                        labelText: '${ref.watch(tProvider)('vat_rate')} %',
+                      ),
                       keyboardType: TextInputType.number,
                     ),
                   ),
@@ -172,8 +183,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         }
                       },
                       child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Currency',
+                        decoration: InputDecoration(
+                          labelText: ref.watch(tProvider)('currency'),
                         ),
                         child: Row(
                           children: [
@@ -185,8 +196,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                                 ),
                               ),
                             ),
-                            Icon(Icons.expand_more_rounded,
-                                color: p.textMuted),
+                            Icon(Icons.expand_more_rounded, color: p.textMuted),
                           ],
                         ),
                       ),
@@ -196,9 +206,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               ),
               const SizedBox(height: 28),
               AccentButton(
-                label: _saving
-                    ? '…'
-                    : ref.watch(tProvider)('continue_btn'),
+                label: _saving ? '…' : ref.watch(tProvider)('continue_btn'),
                 onPressed: _saving ? null : _submit,
               ),
             ],

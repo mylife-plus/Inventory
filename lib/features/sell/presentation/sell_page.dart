@@ -1572,10 +1572,11 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
             .updateSaleCustomer(saleId, customer);
         if (mounted) context.pop(true);
       } catch (e) {
+        debugPrint('Update sale customer failed: $e');
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('$e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(ref.read(tProvider)('save_failed'))),
+          );
         }
       } finally {
         if (mounted) setState(() => _busy = false);

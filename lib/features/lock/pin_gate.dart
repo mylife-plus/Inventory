@@ -89,7 +89,7 @@ class _PinGateState extends ConsumerState<PinGate> with WidgetsBindingObserver {
     try {
       final auth = LocalAuthentication();
       final ok = await auth.authenticate(
-        localizedReason: 'Unlock Inventory',
+        localizedReason: ref.read(tProvider)('unlock_reason'),
         options: const AuthenticationOptions(
           biometricOnly: false,
           stickyAuth: true,

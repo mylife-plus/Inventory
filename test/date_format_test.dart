@@ -45,4 +45,43 @@ void main() {
       }
     }
   });
+
+  test('every key added in this round exists in every language', () {
+    const keys = [
+      'walk_in_customer',
+      'street',
+      'house_nr',
+      'zip',
+      'city',
+      'phone_number',
+      'vat_rate',
+      'receipt_info_hint',
+      'change_photo',
+      'save_failed',
+      'enter_price',
+      'unlock_reason',
+      'enable_lock_reason',
+      'backup_share_text',
+      'csv_turnover_export',
+      'csv_receipts_export',
+      'csv_sale_details',
+      'csv_all_time',
+      'csv_to',
+      'close',
+    ];
+    for (final code in S.supported.keys) {
+      final t = S(code);
+      for (final k in keys) {
+        expect(t(k), isNot(k), reason: '$code missing $k');
+      }
+    }
+  });
+
+  test('time uses plain spaces so the PDF font can draw it', () {
+    for (final code in S.supported.keys) {
+      final s = formatDateTimeShort(d, code);
+      expect(s.contains('\u202F'), isFalse, reason: code);
+      expect(s.contains('\u00A0'), isFalse, reason: code);
+    }
+  });
 }

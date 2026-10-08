@@ -140,7 +140,7 @@ class SettingsPage extends ConsumerWidget {
                           final auth = LocalAuthentication();
                           try {
                             final ok = await auth.authenticate(
-                              localizedReason: 'Enable app lock',
+                              localizedReason: t('enable_lock_reason'),
                               options: const AuthenticationOptions(
                                 biometricOnly: false,
                                 stickyAuth: true,
@@ -250,7 +250,6 @@ class SettingsPage extends ConsumerWidget {
     final code = await showAppSheet<String>(
       context: context,
       builder: (ctx) {
-        final p = AppPalette.of(ctx);
         final prefs =
             ref.read(appPrefsProvider).valueOrNull ?? const AppPrefs();
         return SafeArea(
@@ -264,56 +263,14 @@ class SettingsPage extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
                   children: [
                     for (final e in S.supported.entries)
-                      Builder(
-                        builder: (_) {
-                          final selected = e.key == prefs.localeCode;
-                          return Pressable(
-                            onTap: () => Navigator.pop(ctx, e.key),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 13,
-                              ),
-                              margin: const EdgeInsets.only(bottom: 10),
-                              decoration: BoxDecoration(
-                                color: p.cardElevated,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: selected ? p.fabBorder : p.stroke,
-                                  width: selected ? 1.4 : 1,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    _langFlags[e.key] ?? '🌐',
-                                    style: const TextStyle(fontSize: 22),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      e.value,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontWeight: selected
-                                            ? FontWeight.w800
-                                            : FontWeight.w600,
-                                        fontSize: 16,
-                                        color: p.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                  if (selected)
-                                    Icon(
-                                      Icons.check_rounded,
-                                      color: p.neon,
-                                      size: 22,
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                      PickerOptionRow(
+                        label: e.value,
+                        selected: e.key == prefs.localeCode,
+                        onTap: () => Navigator.pop(ctx, e.key),
+                        leading: Text(
+                          _langFlags[e.key] ?? '🌐',
+                          style: const TextStyle(fontSize: 22),
+                        ),
                       ),
                   ],
                 ),
@@ -403,7 +360,10 @@ class SettingsPage extends ConsumerWidget {
     try {
       await AppBackupService(
         ref.read(databaseProvider),
-      ).shareBackup(context: context);
+      ).shareBackup(
+            context: context,
+            shareText: ref.read(tProvider)('backup_share_text'),
+          );
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -748,7 +708,7 @@ class _ReceiptDetailsSettingsPageState
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ref.read(tProvider)('backup_failed'))),
+        SnackBar(content: Text(ref.read(tProvider)('save_failed'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -784,7 +744,7 @@ class _ReceiptDetailsSettingsPageState
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
           children: [
             Text(
-              'This info will be displayed on the Receipts',
+              t('receipt_info_hint'),
               style: TextStyle(
                 color: p.textPrimary.withValues(alpha: 0.85),
                 fontWeight: FontWeight.w600,
@@ -796,7 +756,7 @@ class _ReceiptDetailsSettingsPageState
               textCapitalization: TextCapitalization.words,
               keyboardType: TextInputType.name,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'Company Name'),
+              decoration: InputDecoration(labelText: t('company_name')),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? t('required') : null,
             ),
@@ -810,7 +770,7 @@ class _ReceiptDetailsSettingsPageState
                     textCapitalization: TextCapitalization.words,
                     keyboardType: TextInputType.streetAddress,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(labelText: 'Street'),
+                    decoration: InputDecoration(labelText: t('street')),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -819,7 +779,7 @@ class _ReceiptDetailsSettingsPageState
                     controller: _nr,
                     keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(labelText: 'Nr.'),
+                    decoration: InputDecoration(labelText: t('house_nr')),
                   ),
                 ),
               ],
@@ -830,7 +790,7 @@ class _ReceiptDetailsSettingsPageState
                 Expanded(
                   child: TextFormField(
                     controller: _zip,
-                    decoration: const InputDecoration(labelText: 'ZIP'),
+                    decoration: InputDecoration(labelText: t('zip')),
                     keyboardType: TextInputType.number,
                     textInputAction: TextInputAction.next,
                   ),
@@ -843,7 +803,7 @@ class _ReceiptDetailsSettingsPageState
                     textCapitalization: TextCapitalization.words,
                     keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(labelText: 'City'),
+                    decoration: InputDecoration(labelText: t('city')),
                   ),
                 ),
               ],
@@ -851,7 +811,7 @@ class _ReceiptDetailsSettingsPageState
             const SizedBox(height: 12),
             TextFormField(
               controller: _phone,
-              decoration: const InputDecoration(labelText: 'Phone Number'),
+              decoration: InputDecoration(labelText: t('phone_number')),
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.next,
             ),
@@ -862,7 +822,7 @@ class _ReceiptDetailsSettingsPageState
                 width: MediaQuery.sizeOf(context).width * 0.42,
                 child: TextFormField(
                   controller: _vat,
-                  decoration: const InputDecoration(labelText: 'VAT Tax Rate'),
+                  decoration: InputDecoration(labelText: t('vat_rate')),
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),

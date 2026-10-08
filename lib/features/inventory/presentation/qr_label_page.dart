@@ -343,10 +343,11 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
         context.go('/inventory');
       }
     } catch (e) {
+      debugPrint('Saving QR label failed: $e');
       if (mounted) {
         setState(() => _busy = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
+          SnackBar(content: Text(ref.read(tProvider)('save_failed'))),
         );
       }
     }

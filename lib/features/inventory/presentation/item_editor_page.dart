@@ -325,8 +325,8 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 4),
                             color: Colors.black54,
-                            child: const Text(
-                              'Change',
+                            child: Text(
+                              t('change_photo'),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.white,
@@ -468,7 +468,7 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
                     validator: (v) {
                       final n =
                           double.tryParse((v ?? '').replaceAll(',', '.'));
-                      if (n == null) return 'Enter a price';
+                      if (n == null) return t('enter_price');
                       return null;
                     },
                   ),

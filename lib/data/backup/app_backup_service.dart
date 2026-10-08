@@ -65,12 +65,12 @@ class AppBackupService {
     return file;
   }
 
-  Future<void> shareBackup({BuildContext? context}) async {
+  Future<void> shareBackup({BuildContext? context, String? shareText}) async {
     final file = await exportToFile();
     await shareWithOrigin(
       ShareParams(
         files: [XFile(file.path)],
-        text: 'Inventory app data backup',
+        text: shareText ?? 'Inventory app data backup',
       ),
       context,
     );
