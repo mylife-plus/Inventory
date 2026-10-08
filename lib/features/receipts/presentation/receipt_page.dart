@@ -560,11 +560,15 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                       children: [
                         Expanded(
                           child: Text(
-                            '${formatQty(l.quantity)}  ${l.title}',
+                            // Same "5 x Cheese" wording as the printout.
+                            '${formatQty(l.quantity)} x ${l.title}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style:
                                 const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
+                        const SizedBox(width: 12),
                         Text(money.format(l.lineTotal)),
                       ],
                     ),
@@ -1126,11 +1130,7 @@ class ReceiptsYearPage extends ConsumerWidget {
                               ),
                             ),
                             Text(
-                              sale.createdAt
-                                  .toLocal()
-                                  .toString()
-                                  .split('.')
-                                  .first,
+                              formatDateTimeShort(sale.createdAt, t.code),
                               style: TextStyle(
                                 color: p.textSecondary,
                                 fontSize: 12,

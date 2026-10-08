@@ -1833,7 +1833,7 @@ class _CustomerPurchases extends ConsumerWidget {
             for (final e in list) {
               final d = e.sale.createdAt;
               final key =
-                  '${d.day.toString().padLeft(2, '0')}. ${DateFormat.MMM(t.code).format(d)} ${d.year}';
+                  formatDateShort(d, t.code);
               byDay.putIfAbsent(key, () => []).add(e);
             }
             for (final dayEntry in byDay.entries) {

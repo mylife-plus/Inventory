@@ -1,3 +1,4 @@
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 const uuid = Uuid();
@@ -82,3 +83,18 @@ class VatBreakdown {
     );
   }
 }
+
+
+/// Day + short month + year in the app language, e.g. "08. Oct. 2026" /
+/// "08. Okt. 2026". The locale's own dot after the month is stripped first so
+/// it is never doubled.
+String formatDateShort(DateTime d, String locale) {
+  final local = d.toLocal();
+  final m = DateFormat.MMM(locale).format(local).replaceAll('.', '');
+  return '${local.day.toString().padLeft(2, '0')}. $m. ${local.year}';
+}
+
+/// [formatDateShort] plus the time in the locale's clock style,
+/// e.g. "08. Oct. 2026, 4:07 PM" / "08. Okt. 2026, 16:07".
+String formatDateTimeShort(DateTime d, String locale) =>
+    '${formatDateShort(d, locale)}, ${DateFormat.jm(locale).format(d.toLocal())}';
