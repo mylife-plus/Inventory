@@ -1,6 +1,8 @@
 package com.softthrive.inventory_app
 
+import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -11,6 +13,24 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val hapticsChannel = "softthrive.inventory/haptics"
+
+    /**
+     * One task only. A launcher intent that arrives while this activity is not
+     * the root of its task (a stale second window, e.g. the app was opened from
+     * the installer and the icon was tapped afterwards) is dropped so the icon
+     * always brings the existing window forward instead of opening a second one.
+     * Real intents (links, shares) are delivered to the single task as usual.
+     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        if (!isTaskRoot &&
+            intent.action == Intent.ACTION_MAIN &&
+            intent.hasCategory(Intent.CATEGORY_LAUNCHER)
+        ) {
+            finish()
+            return
+        }
+        super.onCreate(savedInstanceState)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
