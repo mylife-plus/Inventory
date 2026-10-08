@@ -7,6 +7,8 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -22,14 +24,47 @@ class MainActivity : FlutterActivity() {
      * Real intents (links, shares) are delivered to the single task as usual.
      */
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         if (!isTaskRoot &&
             intent.action == Intent.ACTION_MAIN &&
             intent.hasCategory(Intent.CATEGORY_LAUNCHER)
         ) {
             finish()
-            return
         }
-        super.onCreate(savedInstanceState)
+    }
+
+    /**
+     * System Back on the app's first screen: keep the app in its one task and
+     * send it to the background (like Android's own launcher apps) instead of
+     * destroying the window, so tapping the icon resumes exactly where the
+     * user was rather than starting the app again.
+     *
+     * Below Android 13 Flutter routes a root Back to [popSystemNavigator].
+     * On 13+ Flutter unregisters its back callback on the first screen and the
+     * system would finish the activity, so a fallback callback is registered
+     * for exactly that state.
+     */
+    override fun popSystemNavigator(): Boolean {
+        moveTaskToBack(true)
+        return true
+    }
+
+    private var rootBackCallback: OnBackInvokedCallback? = null
+
+    override fun setFrameworkHandlesBack(frameworkHandlesBack: Boolean) {
+        super.setFrameworkHandlesBack(frameworkHandlesBack)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (frameworkHandlesBack) {
+            rootBackCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
+            rootBackCallback = null
+        } else if (rootBackCallback == null) {
+            val cb = OnBackInvokedCallback { moveTaskToBack(true) }
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                cb,
+            )
+            rootBackCallback = cb
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
