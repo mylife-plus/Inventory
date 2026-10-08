@@ -1384,7 +1384,8 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
                           ),
                         ),
                         TextSpan(
-                          text: ' ${t('purchases')}',
+                          text:
+                              ' ${t((stats?.purchaseCount ?? 0) == 1 ? 'purchase' : 'purchases')}',
                           style: TextStyle(
                             color: p.textPrimary,
                             fontWeight: FontWeight.w600,
@@ -1813,7 +1814,7 @@ class _CustomerPurchases extends ConsumerWidget {
             final monthTotal =
                 list.fold<double>(0, (s, e) => s + e.line.lineTotal);
             final monthName =
-                DateFormat.MMMM().format(DateTime(year, month));
+                DateFormat.MMMM(t.code).format(DateTime(year, month));
             widgets.add(
               SectionHeader(
                 title: monthName,
@@ -1832,7 +1833,7 @@ class _CustomerPurchases extends ConsumerWidget {
             for (final e in list) {
               final d = e.sale.createdAt;
               final key =
-                  '${d.day.toString().padLeft(2, '0')}. ${DateFormat.MMM().format(d)} ${d.year}';
+                  '${d.day.toString().padLeft(2, '0')}. ${DateFormat.MMM(t.code).format(d)} ${d.year}';
               byDay.putIfAbsent(key, () => []).add(e);
             }
             for (final dayEntry in byDay.entries) {

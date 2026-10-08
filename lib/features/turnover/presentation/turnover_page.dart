@@ -180,8 +180,14 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
     });
   }
 
-  String _fmtShort(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}. ${DateFormat.MMM().format(d)}. ${d.year}';
+  String _fmtShort(DateTime d) {
+    // Month in the app language ("Okt." in German); strip the locale's own dot
+    // so it is never doubled.
+    final m = DateFormat.MMM(ref.read(tProvider).code)
+        .format(d)
+        .replaceAll('.', '');
+    return '${d.day.toString().padLeft(2, '0')}. $m. ${d.year}';
+  }
 
   Future<void> _showSortSheet() async {
     final t = ref.read(tProvider);
@@ -470,7 +476,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                           final list = months[month]!;
                           final monthTotal =
                               list.fold<double>(0, (s, i) => s + i.revenue);
-                          final monthName = DateFormat.MMMM().format(
+                          final monthName = DateFormat.MMMM(t.code).format(
                             DateTime(year, month),
                           );
                           out.add(

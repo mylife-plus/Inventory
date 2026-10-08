@@ -1291,7 +1291,7 @@ class CustomerListCard extends ConsumerWidget {
                                   ),
                                 ),
                                 TextSpan(
-                                  text: ' ${t('purchases')}',
+                                  text: ' ${t(purchaseCount == '1' ? 'purchase' : 'purchases')}',
                                   style: TextStyle(
                                     color: p.textSecondary,
                                     fontWeight: FontWeight.w500,
