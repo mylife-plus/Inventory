@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/db/app_database.dart';
+import 'package:inventory_app/data/resale_draft.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -116,19 +117,37 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
     state = AsyncData(await ref.read(saleRepositoryProvider).list());
   }
 
+  /// Completes the cart as a sale. When a receipt was undone for editing
+  /// ([resaleDraftProvider]), the sale is re-created under the same receipt
+  /// number and date, and the draft is cleared.
   Future<Sale> completeSale({
     required List<SaleLine> lines,
     Customer? customer,
   }) async {
+    final draft = ref.read(resaleDraftProvider);
     final sale = await ref.read(saleRepositoryProvider).createSale(
           lines: lines,
           customer: customer,
+          id: draft?.saleId,
+          createdAt: draft?.createdAt,
         );
+    if (draft != null) {
+      await ref.read(resaleDraftProvider.notifier).clear();
+    }
     await ref.read(inventoryItemsProvider.notifier).refresh();
     await refresh();
     // Customer purchase counts / spend update on next stats load.
     ref.invalidate(customersProvider);
     return sale;
+  }
+
+  /// Undo a sale: its items go back to stock and the receipt is removed
+  /// (one transaction). Totals / turnover no longer count it.
+  Future<void> voidSale(String saleId) async {
+    await ref.read(saleRepositoryProvider).voidSale(saleId);
+    await ref.read(inventoryItemsProvider.notifier).refresh();
+    await refresh();
+    ref.invalidate(customersProvider);
   }
 
   Future<Sale> updateSaleLines({
@@ -411,17 +430,22 @@ class SaleRepository {
     return all.where((s) => s.customerId == customerId).toList();
   }
 
+  /// [id] / [createdAt] re-use an undone receipt's number and date
+  /// (Edit on a receipt); new sales get fresh ones.
   Future<Sale> createSale({
     required List<SaleLine> lines,
     Customer? customer,
+    String? id,
+    DateTime? createdAt,
   }) async {
     if (lines.isEmpty) {
       throw StateError('Cannot complete a sale with no items');
     }
     final db = await _db.database;
-    final id = newId();
-    final total = lines.fold<double>(0, (sum, l) => sum + l.lineTotal);
     final now = DateTime.now();
+    final saleId = id ?? newId();
+    final saleDate = createdAt ?? now;
+    final total = lines.fold<double>(0, (sum, l) => sum + l.lineTotal);
     // Never persist guest sentinel as a real customer id.
     final customerId =
         (customer == null || customer.id == '__guest__') ? null : customer.id;
@@ -454,15 +478,15 @@ class SaleRepository {
       }
 
       await txn.insert('sales', {
-        'id': id,
+        'id': saleId,
         'customer_id': customerId,
         'customer_name': customerName,
         'total': total,
-        'created_at': now.toIso8601String(),
+        'created_at': saleDate.toIso8601String(),
       });
       for (final line in lines) {
         await txn.insert('sale_lines', {
-          'sale_id': id,
+          'sale_id': saleId,
           'item_id': line.itemId,
           'title': line.title,
           'unit_price': line.unitPrice,
@@ -477,13 +501,46 @@ class SaleRepository {
     });
 
     return Sale(
-      id: id,
+      id: saleId,
       customerId: customerId,
       customerName: customerName,
       total: total,
-      createdAt: now,
+      createdAt: saleDate,
       lines: lines,
     );
+  }
+
+  /// Undo a sale in one transaction: every line's quantity goes back to
+  /// stock (items deleted since are skipped), then the lines and the sale
+  /// row are removed. A missing sale is a no-op (already undone).
+  Future<void> voidSale(String saleId) async {
+    final db = await _db.database;
+    final now = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      final sale = await txn.query(
+        'sales',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [saleId],
+        limit: 1,
+      );
+      if (sale.isEmpty) return;
+      final lines = await txn.query(
+        'sale_lines',
+        columns: ['item_id', 'quantity'],
+        where: 'sale_id = ?',
+        whereArgs: [saleId],
+      );
+      for (final l in lines) {
+        await txn.rawUpdate(
+          'UPDATE inventory_items SET amount = amount + ?, updated_at = ? '
+          'WHERE id = ?',
+          [(l['quantity'] as num).toDouble(), now, l['item_id']],
+        );
+      }
+      await txn.delete('sale_lines', where: 'sale_id = ?', whereArgs: [saleId]);
+      await txn.delete('sales', where: 'id = ?', whereArgs: [saleId]);
+    });
   }
 
   /// Change who a receipt belongs to (`null` / guest sentinel = Guest).

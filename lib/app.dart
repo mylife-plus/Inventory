@@ -6,6 +6,8 @@ import 'package:inventory_app/core/l10n/s.dart';
 import 'package:inventory_app/core/notifications/in_app_notifications.dart';
 import 'package:inventory_app/core/routing/app_router.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
+import 'package:inventory_app/data/resale_draft.dart';
+import 'package:inventory_app/features/sell/presentation/sell_page.dart';
 import 'package:inventory_app/features/lock/pin_gate.dart';
 
 class InventoryApp extends ConsumerWidget {
@@ -15,6 +17,24 @@ class InventoryApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     final prefs = ref.watch(appPrefsProvider).valueOrNull ?? const AppPrefs();
+
+    // Receipt Edit → Continue (undone sale being re-done): a draft saved
+    // before the app was closed refills the empty cart + customer, and cart
+    // changes are saved so they survive leaving / killing the app.
+    ref.listen<ResaleDraft?>(resaleDraftProvider, (prev, next) {
+      if (prev == null && next != null && ref.read(cartProvider).isEmpty) {
+        restoreResaleIntoCart(
+          ref.read,
+          next,
+          guestName: S(prefs.localeCode)('guest'),
+        );
+      }
+    });
+    ref.listen(cartProvider, (_, next) {
+      if (next.isNotEmpty) {
+        ref.read(resaleDraftProvider.notifier).updateLines(next);
+      }
+    });
 
     return MaterialApp.router(
       title: S(prefs.localeCode)('app_name'),

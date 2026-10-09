@@ -13,6 +13,7 @@ import 'package:inventory_app/core/utils/app_haptics.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/export/csv_export.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
+import 'package:inventory_app/data/resale_draft.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/features/sell/presentation/sell_page.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
@@ -371,18 +372,49 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     );
   }
 
+  bool _undoing = false;
+
+  /// Edit → "this will undo the sale" popup. Cancel: nothing changes.
+  /// Continue: the sale is undone (stock back, receipt removed) and its
+  /// items + customer open on the normal Sell page; completing the sale
+  /// again re-creates the receipt (same number and date).
   Future<void> _editSaleItems(Sale sale) async {
-    // Prefill sell cart with this receipt's lines and open the sell items page.
-    ref.read(cartProvider.notifier).replaceAll(sale.lines);
-    ref.read(editingSaleIdProvider.notifier).state = sale.id;
-    ref.read(editingSaleLinesProvider.notifier).state = List<SaleLine>.from(
-      sale.lines,
+    if (_undoing) return;
+    final t = ref.read(tProvider);
+    final pending = ref.read(resaleDraftProvider);
+    if (pending != null && pending.saleId != sale.id) {
+      // Another undone receipt is still in the cart — finish that first so
+      // its items are never overwritten.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('resale_pending'))),
+      );
+      context.push('/sell');
+      return;
+    }
+    final ok = await showAppConfirmDialog(
+      context: context,
+      title: t('edit_sale_title'),
+      message: t('edit_sale_message'),
+      cancelLabel: t('cancel'),
+      confirmLabel: t('continue_action'),
     );
-    ref.read(sellCustomerProvider.notifier).state = null;
+    if (!ok || !mounted) return;
+    setState(() => _undoing = true);
+    try {
+      await startResale(ref.read, sale, guestName: t('guest'));
+    } catch (e) {
+      debugPrint('Undo sale failed: $e');
+      if (mounted) {
+        setState(() => _undoing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('save_failed'))),
+        );
+      }
+      return;
+    }
     if (!mounted) return;
-    // The editor takes the receipt's place in the history, so Cancel (a
-    // plain pop) lands on the screen that opened the receipt — Items Sold
-    // list, customer purchases — never back on this receipt.
+    // The receipt no longer exists: Sell takes its place in the history,
+    // so Back / Cancel there lands on Items Sold (or Inventory).
     if (context.canPop()) {
       context.pushReplacement('/sell');
     } else {
@@ -662,12 +694,12 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          titleSpacing: 16,
+          centerTitle: true,
           title: Text(t('send_receipt')),
           actions: [
             IconButton(
               tooltip: t('edit_item'),
-              onPressed: () => _editSaleItems(sale),
+              onPressed: _undoing ? null : () => _editSaleItems(sale),
               icon: Icon(Icons.edit_rounded, color: p.textSecondary),
             ),
           ],

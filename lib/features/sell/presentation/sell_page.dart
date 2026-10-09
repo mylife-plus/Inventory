@@ -8,6 +8,7 @@ import 'package:inventory_app/core/receipts/receipt_details_gate.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
+import 'package:inventory_app/data/resale_draft.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/features/inventory/presentation/item_list_tools.dart';
 import 'package:inventory_app/features/customers/presentation/customer_list_tools.dart';
@@ -31,6 +32,65 @@ final editingSaleIdProvider = StateProvider<String?>((ref) => null);
 
 /// Original lines of the sale being edited (for stock headroom while editing).
 final editingSaleLinesProvider = StateProvider<List<SaleLine>?>((ref) => null);
+
+/// `ref.read` of a WidgetRef, Ref or ProviderContainer.
+typedef ProviderReader = T Function<T>(ProviderListenable<T> provider);
+
+/// Guest sentinel for [sellCustomerProvider] (completes as Guest).
+Customer guestSellCustomer(String name) => Customer(
+      id: '__guest__',
+      name: name,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+    );
+
+/// Receipt → Edit → Continue: undo the sale (stock back, receipt removed)
+/// and put its items + customer into the Sell cart. The draft is saved
+/// BEFORE the sale is removed, so an app kill can't lose the sale; if the
+/// undo fails the draft is dropped and nothing changes.
+Future<void> startResale(
+  ProviderReader read,
+  Sale sale, {
+  required String guestName,
+}) async {
+  final drafts = read(resaleDraftProvider.notifier);
+  await drafts.start(ResaleDraft.fromSale(sale));
+  try {
+    await read(salesProvider.notifier).voidSale(sale.id);
+  } catch (_) {
+    await drafts.clear();
+    rethrow;
+  }
+  read(editingSaleIdProvider.notifier).state = null;
+  read(editingSaleLinesProvider.notifier).state = null;
+  read(cartProvider.notifier).replaceAll(sale.lines);
+  await _applyResaleCustomer(read, sale.customerId, guestName);
+}
+
+/// After the app was closed mid-edit: put the saved items + customer back
+/// into an empty cart.
+Future<void> restoreResaleIntoCart(
+  ProviderReader read,
+  ResaleDraft draft, {
+  required String guestName,
+}) async {
+  if (read(cartProvider).isNotEmpty) return;
+  read(cartProvider.notifier).replaceAll(draft.lines);
+  await _applyResaleCustomer(read, draft.customerId, guestName);
+}
+
+Future<void> _applyResaleCustomer(
+  ProviderReader read,
+  String? customerId,
+  String guestName,
+) async {
+  if (customerId == null) {
+    read(sellCustomerProvider.notifier).state = guestSellCustomer(guestName);
+    return;
+  }
+  // Deleted since the sale → no preset; checkout asks for a customer.
+  final c = await read(customerRepositoryProvider).get(customerId);
+  read(sellCustomerProvider.notifier).state = c;
+}
 
 class CartNotifier extends StateNotifier<List<SaleLine>> {
   CartNotifier() : super(const []);
@@ -203,9 +263,21 @@ class _SellPageState extends ConsumerState<SellPage> {
   /// customer purchases); with no history (receipt right after a sale) it
   /// goes to Inventory — the same place the receipt's own back leads.
   /// Outside editing the cart is discarded.
+  ///
+  /// While re-doing an undone receipt (Edit → Continue) Cancel / Back only
+  /// leave the page: the items and customer stay in the cart (and saved)
+  /// until the sale is completed again.
   void _cancel() {
     if (_busy) return;
     FocusScope.of(context).unfocus();
+    if (ref.read(resaleDraftProvider) != null) {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/inventory');
+      }
+      return;
+    }
     ref.read(cartProvider.notifier).clear();
     ref.read(sellCustomerProvider.notifier).state = null;
     _clearEditState();
@@ -372,11 +444,13 @@ class _SellPageState extends ConsumerState<SellPage> {
     final total = cart.fold<double>(0, (s, l) => s + l.lineTotal);
     final qty = cart.fold<double>(0, (s, l) => s + l.quantity);
     final editing = ref.watch(editingSaleIdProvider) != null;
+    final resale = ref.watch(resaleDraftProvider);
 
     // While editing a receipt, system back behaves exactly like Cancel so a
-    // stale edit session can never be applied to a later sale.
+    // stale edit session can never be applied to a later sale. Re-doing an
+    // undone receipt: Back keeps the cart (and never leaves the app).
     return PopScope(
-      canPop: !editing,
+      canPop: !editing && (resale == null || context.canPop()),
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _cancel();
       },
@@ -391,10 +465,8 @@ class _SellPageState extends ConsumerState<SellPage> {
               color: p.textSecondary,
             ),
           ),
-          // Left-aligned right after the scanner icon like every other
-          // screen (only Add Items is centered, per the client).
-          centerTitle: false,
-          titleSpacing: 2,
+          // Centered like every page title (client, Oct 9).
+          centerTitle: true,
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -426,6 +498,42 @@ class _SellPageState extends ConsumerState<SellPage> {
         ),
         body: Column(
           children: [
+            if (resale != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: p.card,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: p.stroke),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.edit_note_rounded,
+                        size: 20,
+                        color: p.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          t.tr('resale_hint', {'n': resale.receiptNumber}),
+                          style: TextStyle(
+                            color: p.textSecondary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Row(
@@ -1604,11 +1712,8 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
 
     if (!widget.checkout) {
       if (customer == null) {
-        ref.read(sellCustomerProvider.notifier).state = Customer(
-          id: '__guest__',
-          name: ref.read(tProvider)('guest'),
-          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
-        );
+        ref.read(sellCustomerProvider.notifier).state =
+            guestSellCustomer(ref.read(tProvider)('guest'));
       } else {
         ref.read(sellCustomerProvider.notifier).state = customer;
       }
@@ -1742,6 +1847,9 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
                           child: SelectCustomerTile(
                             customer: c,
                             money: money,
+                            // Client: contact icons are display only here
+                            // (no call / mail / maps), like Send Receipt.
+                            contactsInteractive: false,
                             onTap: _busy ? () {} : () => _onPick(c),
                           ),
                         ),
