@@ -92,6 +92,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             children: [
               Text(
                 ref.watch(tProvider)('app_name'),
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   color: p.fabBorder,
                   fontWeight: FontWeight.w800,
@@ -102,6 +103,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               const SizedBox(height: 8),
               Text(
                 ref.watch(tProvider)('setup_title'),
+                textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: p.textSecondary,
                   height: 1.35,

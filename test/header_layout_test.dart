@@ -8,14 +8,18 @@ import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 
-/// Oct 8 client review: page titles are left-aligned right next to the back
-/// button (sub pages) / the nav buttons (Inventory, Customers, Turnover).
+/// Oct 9 client review: every page title is centered — sub pages (with a
+/// back button and actions) and the tab headers (Inventory, Customers,
+/// Turnover) alike.
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
   for (final dark in [true, false]) {
-    testWidgets('app bar title sits <= 8 px after the back icon '
+    testWidgets('app bar title is centered on screen '
         '(${dark ? 'dark' : 'light'})', (tester) async {
+      tester.view.physicalSize = const Size(412 * 3, 915 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
       final theme = dark ? AppTheme.dark : AppTheme.light;
       await tester.pumpWidget(
         MaterialApp(
@@ -24,24 +28,19 @@ void main() {
             appBar: AppBar(
               leading: const BackButton(),
               title: const Text('Edit Item'),
+              actions: [
+                IconButton(onPressed: () {}, icon: const Icon(Icons.edit)),
+              ],
             ),
           ),
         ),
       );
-      final icon = tester.getRect(
-        find.descendant(of: find.byType(BackButton), matching: find.byType(Icon)),
-      );
       final title = tester.getRect(find.text('Edit Item'));
-      final gap = title.left - icon.right;
-      expect(gap, inInclusiveRange(0, 8), reason: 'gap $gap');
-      expect(icon.left, greaterThanOrEqualTo(4));
-      // Left-aligned, not centered.
-      expect(title.left, lessThan(60));
+      expect(title.center.dx, closeTo(412 / 2, 1.5));
     });
   }
 
-  testWidgets('tab header title is left-aligned next to the nav buttons',
-      (tester) async {
+  testWidgets('tab header title is centered on screen', (tester) async {
     tester.view.physicalSize = const Size(412 * 3, 915 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -66,10 +65,9 @@ void main() {
     );
     await tester.pump();
     final title = tester.getRect(find.text('Inventory'));
-    // 16 padding + 2×44 nav buttons + 10 between + 10 gap + 26 icon + 8.
-    const expectedLeft = 16 + 44 + 10 + 44 + 10 + 26 + 8;
-    expect(title.left, closeTo(expectedLeft, 1.5));
-    // Clearly left of center on a phone.
-    expect(title.center.dx, lessThan(412 / 2));
+    // Icon (26) + gap (8) + title form one group centered on the screen.
+    final groupLeft = title.left - 8 - 26;
+    final groupCenter = (groupLeft + title.right) / 2;
+    expect(groupCenter, closeTo(412 / 2, 2));
   });
 }

@@ -827,6 +827,7 @@ class _AddCustomFieldSheetBodyState extends State<_AddCustomFieldSheetBody> {
             const SizedBox(height: 16),
             Text(
               t('add_field'),
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 17,
@@ -915,6 +916,7 @@ class _PromptValueSheetState extends State<_PromptValueSheet> {
             const SizedBox(height: 16),
             Text(
               widget.title,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 17,
@@ -1048,7 +1050,7 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                   child: Align(
-                    alignment: Alignment.centerLeft,
+                    alignment: Alignment.center,
                     child: Text(
                       t('add_field'),
                       style: TextStyle(

@@ -179,6 +179,7 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
           children: [
             Text(
               t('app_name'),
+              textAlign: TextAlign.center,
               style: TextStyle(
                 color: p.fabBorder,
                 fontWeight: FontWeight.w800,
@@ -189,6 +190,7 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
             const SizedBox(height: 8),
             Text(
               t('prefs_setup_sub'),
+              textAlign: TextAlign.center,
               style: TextStyle(
                 color: p.textSecondary,
                 fontSize: 15,

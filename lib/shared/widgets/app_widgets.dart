@@ -209,54 +209,55 @@ class ClientHeader extends ConsumerWidget {
           children: [
             SizedBox(
               height: 48,
-              // Client (Oct 8): the title is left-aligned, right next to the
-              // nav buttons (one small gap), not centered on the screen.
-              child: Row(
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  for (var i = 0; i < leftTabs.length; i++) ...[
-                    if (i > 0) const SizedBox(width: 10),
-                    _NavIcon(
-                      asset: leftTabs[i].asset,
-                      onTap: () => _go(context, leftTabs[i].id),
-                    ),
-                  ],
-                  const SizedBox(width: _HeaderTitle.gapAfterNav),
-                  Expanded(
+                  // Center: selected icon + title. Never truncated: stays at
+                  // true screen center when it fits, otherwise shifts into the
+                  // free space right of the nav icons, then scales down.
+                  Positioned.fill(
                     child: _HeaderTitle(
                       title: title,
                       titleAsset: titleAsset,
                       color: p.textPrimary,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Pressable(
-                    onTap: () => context.push('/settings'),
-                    child: SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: Center(
-                        child: AppIcon(
-                          AppAssets.settings,
-                          size: 24,
-                          opacity: section == -1 ? 1 : 0.85,
+                  // Left unselected + right settings
+                  Row(
+                    children: [
+                      for (var i = 0; i < leftTabs.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 10),
+                        _NavIcon(
+                          asset: leftTabs[i].asset,
+                          onTap: () => _go(context, leftTabs[i].id),
+                        ),
+                      ],
+                      const Spacer(),
+                      Pressable(
+                        onTap: () => context.push('/settings'),
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Center(
+                            child: AppIcon(
+                              AppAssets.settings,
+                              size: 24,
+                              opacity: section == -1 ? 1 : 0.85,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ],
               ),
             ),
             if (subtitle != null && subtitle!.trim().isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  2 * 44 + 10 + _HeaderTitle.gapAfterNav,
-                  4,
-                  48,
-                  0,
-                ),
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
                 child: Text(
                   subtitle!,
-                  textAlign: TextAlign.start,
+                  textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -400,8 +401,6 @@ class ListActionIconsRow extends StatelessWidget {
   }
 }
 
-/// Selected section icon + title, left-aligned in the space after the nav
-/// buttons. Never truncated: scales down when the title is long.
 class _HeaderTitle extends StatelessWidget {
   const _HeaderTitle({
     required this.title,
@@ -413,8 +412,11 @@ class _HeaderTitle extends StatelessWidget {
   final String titleAsset;
   final Color color;
 
-  /// Space between the last nav button and the title icon.
-  static const double gapAfterNav = 10;
+  // Left nav: 2 × 44 icons + 10 gap, +12 breathing room.
+  static const double _leftReserve = 110;
+  // Right settings icon: 40, +12 breathing room.
+  static const double _rightReserve = 52;
+  static const double _iconAndGap = 26 + 8;
 
   @override
   Widget build(BuildContext context) {
@@ -424,27 +426,47 @@ class _HeaderTitle extends StatelessWidget {
       height: 1.1,
       color: color,
     );
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(titleAsset, size: 26),
-          const SizedBox(width: 8),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: AlignmentDirectional.centerStart,
-              child: Text(
-                title,
-                maxLines: 1,
-                softWrap: false,
-                style: style,
-              ),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final tp = TextPainter(
+          text: TextSpan(
+            text: title,
+            style: DefaultTextStyle.of(context).style.merge(style),
+          ),
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout();
+        final contentW = _iconAndGap + tp.width + 2;
+        tp.dispose();
+        final fitsCentered = contentW <= c.maxWidth - 2 * _leftReserve;
+        return Padding(
+          padding: EdgeInsets.only(
+            left: _leftReserve,
+            right: fitsCentered ? _leftReserve : _rightReserve,
+          ),
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(titleAsset, size: 26),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: style,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

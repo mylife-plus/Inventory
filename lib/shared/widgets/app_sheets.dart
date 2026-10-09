@@ -213,6 +213,7 @@ Future<bool> showAppConfirmDialog({
             children: [
               Text(
                 title,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 18,
@@ -222,6 +223,7 @@ Future<bool> showAppConfirmDialog({
               const SizedBox(height: 10),
               Text(
                 message,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   color: p.textSecondary,
                   height: 1.35,
