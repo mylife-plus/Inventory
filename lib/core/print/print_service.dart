@@ -238,8 +238,14 @@ class PrintService {
   }
 
   /// Choices for "labels per page" on the QR label screen.
-  static const List<int> qrLabelsPerPageOptions = [1, 2, 4, 6, 8, 12];
-  static const int qrLabelsPerPageMax = 12;
+  static const List<int> qrLabelsPerPageOptions = [
+    1, 2, 4, 6, 8, 12, 16, 20, 24, //
+  ];
+  static const int qrLabelsPerPageMax = 24;
+
+  /// A4 label sheet: outer margin and gap between labels (print + preview).
+  static const double labelSheetMargin = 8 * PdfPageFormat.mm;
+  static const double labelSheetGap = 4 * PdfPageFormat.mm;
   static const String _qrPerPagePrefKey = 'qr_labels_per_page';
 
   static Future<int> lastQrLabelsPerPage() async {
@@ -307,8 +313,8 @@ class PrintService {
       throw StateError('Cannot wrap tiny PNG (${png.length} bytes)');
     }
     final pageFormat = _finiteFormat(format);
-    const margin = 8 * PdfPageFormat.mm;
-    const gap = 4 * PdfPageFormat.mm;
+    const margin = labelSheetMargin;
+    const gap = labelSheetGap;
     final grid = qrLabelGrid(
       count,
       pageFormat.width - margin * 2,

@@ -7,6 +7,7 @@ import 'package:inventory_app/features/customers/presentation/customers_page.dar
 import 'package:inventory_app/features/inventory/presentation/inventory_page.dart';
 import 'package:inventory_app/features/inventory/presentation/item_editor_page.dart';
 import 'package:inventory_app/features/inventory/presentation/qr_label_page.dart';
+import 'package:inventory_app/features/inventory/presentation/qr_print_preview_page.dart';
 import 'package:inventory_app/features/onboarding/presentation/onboarding_page.dart';
 import 'package:inventory_app/features/onboarding/presentation/prefs_setup_page.dart';
 import 'package:inventory_app/features/receipts/presentation/receipt_page.dart';
@@ -114,6 +115,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/inventory/qr/:id',
         builder: (_, state) =>
             QrLabelPage(itemId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/inventory/qr/:id/print',
+        builder: (_, state) {
+          final args = state.extra;
+          // No args (e.g. restored deep link): back to the label editor.
+          if (args is! QrPrintArgs) {
+            return QrLabelPage(itemId: state.pathParameters['id']!);
+          }
+          return QrPrintPreviewPage(args: args);
+        },
       ),
       GoRoute(
         path: '/sell',
