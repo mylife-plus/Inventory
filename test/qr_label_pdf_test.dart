@@ -380,9 +380,9 @@ void main() {
     // 6 on portrait A4 → 2 columns × 3 rows gives the biggest labels.
     final six = PrintService.qrLabelGrid(6, w, h, gap: gap);
     expect((six.cols, six.rows), (2, 3));
-    // Oct 9: 16 / 20 / 24 per A4 stay cleanly laid out — label at least
+    // Oct 9: 16 / 20 / 25 per A4 stay cleanly laid out — label at least
     // 35 mm wide, QR at least 22 mm (scannable), title text >= 9 pt.
-    for (final n in [16, 20, 24]) {
+    for (final n in [16, 20, 25]) {
       expect(PrintService.qrLabelsPerPageOptions, contains(n));
       final g = PrintService.qrLabelGrid(n, w, h, gap: gap);
       final scale = g.labelW / PrintService.qrLabelFormat.width;
@@ -402,7 +402,12 @@ void main() {
         reason: 'n=$n title pt',
       );
     }
-    expect(PrintService.qrLabelsPerPageMax, 24);
+    expect(PrintService.qrLabelsPerPageMax, 25);
+    // Oct 10: every option fills complete rows (no half-empty last row).
+    for (final n in PrintService.qrLabelsPerPageOptions) {
+      final g = PrintService.qrLabelGrid(n, w, h, gap: gap);
+      expect(g.cols * g.rows, n, reason: 'n=$n is ${g.cols}x${g.rows}');
+    }
   });
 
   test(

@@ -163,6 +163,31 @@ class PrintService {
   /// finishes loading and the user cannot leave (no working back/X).
   /// Rasterize up front; [onLayout] only wraps the cached PNG for the
   /// requested paper size (fast, deterministic).
+  /// The label sheet exactly as Print lays it out ([perPage] labels; 1 =
+  /// single sticker page: A6 on Android, 70×100 mm on iOS), for "Open as
+  /// PDF".
+  static Future<Uint8List> qrLabelSheetPdf({
+    required String title,
+    required String subtitle,
+    required String qrData,
+    String? companyName,
+    int perPage = 1,
+  }) async {
+    final int count = perPage.clamp(1, qrLabelsPerPageMax);
+    final png = await rasterQrLabelPng(
+      title: title,
+      subtitle: subtitle,
+      qrData: qrData,
+      companyName: companyName,
+    );
+    final bool android = !kIsWeb && Platform.isAndroid;
+    if (count > 1) return wrapLabelGridPdf(png, count, PdfPageFormat.a4);
+    return wrapLabelImagePdf(
+      png,
+      android ? PdfPageFormat.a6 : _finiteFormat(qrLabelFormat),
+    );
+  }
+
   static Future<void> layoutQrLabelPdf({
     required Uint8List bytes,
     required String title,
@@ -238,10 +263,13 @@ class PrintService {
   }
 
   /// Choices for "labels per page" on the QR label screen.
+  /// Every option fills complete rows on A4 (client, Oct 10): 1, 1×2, 2×2,
+  /// 2×3, 3×3, 3×4, 4×4, 4×5, 5×5. (8 used to print 3×3 with 2 in the
+  /// last row, so it became 9.)
   static const List<int> qrLabelsPerPageOptions = [
-    1, 2, 4, 6, 8, 12, 16, 20, 24, //
+    1, 2, 4, 6, 9, 12, 16, 20, 25, //
   ];
-  static const int qrLabelsPerPageMax = 24;
+  static const int qrLabelsPerPageMax = 25;
 
   /// A4 label sheet: outer margin and gap between labels (print + preview).
   static const double labelSheetMargin = 8 * PdfPageFormat.mm;
