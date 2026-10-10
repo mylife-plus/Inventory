@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -1238,7 +1240,15 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
 
   @override
   void dispose() {
-    _scanner.dispose();
+    // Release the camera for sure (closing right after the camera started,
+    // e.g. just after the permission prompt, could leave it open).
+    final scanner = _scanner;
+    unawaited(
+      scanner
+          .stop()
+          .catchError((Object _) {})
+          .whenComplete(() => scanner.dispose()),
+    );
     super.dispose();
   }
 
@@ -1320,10 +1330,14 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
 
   void _done() {
     final items = List<InventoryItem>.from(_pending);
+    unawaited(_scanner.stop().catchError((Object _) {}));
     context.pop(items);
   }
 
-  void _cancel() => context.pop();
+  void _cancel() {
+    unawaited(_scanner.stop().catchError((Object _) {}));
+    context.pop();
+  }
 
   /// Scanned items grouped by id (scan order kept) with their counts.
   List<(InventoryItem, int)> get _grouped {
