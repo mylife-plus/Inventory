@@ -12,9 +12,12 @@ import android.window.OnBackInvokedDispatcher
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import androidx.core.content.FileProvider
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val hapticsChannel = "softthrive.inventory/haptics"
+    private val filesChannel = "softthrive.inventory/files"
 
     /**
      * One task only. A launcher intent that arrives while this activity is not
@@ -79,6 +82,57 @@ class MainActivity : FlutterActivity() {
                 performAppHaptic(type)
                 result.success(null)
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, filesChannel)
+            .setMethodCallHandler { call, result ->
+                if (call.method != "openPdf") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val path = call.argument<String>("path")
+                val title = call.argument<String>("title") ?: "PDF"
+                if (path == null) {
+                    result.success(false)
+                    return@setMethodCallHandler
+                }
+                try {
+                    result.success(openPdf(path, title))
+                } catch (e: Exception) {
+                    result.error("open_pdf", e.message, null)
+                }
+            }
+    }
+
+    /**
+     * "Open as PDF": the system chooser with PDF viewers (ACTION_VIEW) plus
+     * share targets (ACTION_SEND) as extra choices, so it works even when no
+     * PDF viewer is installed. Started without NEW_TASK, so the other app
+     * opens on top of ours in the same task: its own Back/X returns here and
+     * the app stays a single window.
+     */
+    private fun openPdf(path: String, title: String): Boolean {
+        val file = File(path)
+        if (!file.exists()) return false
+        val uri = FileProvider.getUriForFile(this, "$packageName.pdfprovider", file)
+        val view = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/pdf")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val hasViewer = view.resolveActivity(packageManager) != null
+        val chooser = if (hasViewer) {
+            Intent.createChooser(view, title).apply {
+                putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(send))
+            }
+        } else {
+            Intent.createChooser(send, title)
+        }
+        chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(chooser)
+        return true
     }
 
     /**
