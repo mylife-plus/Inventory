@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
@@ -109,6 +110,62 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     await action();
   }
 
+  OverlayEntry? _toast;
+
+  void _showCopiedToast(String text) {
+    _toast?.remove();
+    final p = AppPalette.of(context);
+    final entry = OverlayEntry(
+      builder: (ctx) => Positioned(
+        top: MediaQuery.paddingOf(ctx).top + 12,
+        left: 0,
+        right: 0,
+        child: IgnorePointer(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: p.cardElevated,
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(color: p.stroke),
+                  boxShadow: const [
+                    BoxShadow(blurRadius: 12, color: Color(0x55000000)),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_rounded, size: 18, color: p.textPrimary),
+                    const SizedBox(width: 8),
+                    Text(
+                      text,
+                      style: TextStyle(
+                        color: p.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    _toast = entry;
+    Overlay.of(context, rootOverlay: true).insert(entry);
+    Future<void>.delayed(const Duration(milliseconds: 1800), () {
+      if (_toast == entry) _toast = null;
+      if (entry.mounted) entry.remove();
+    });
+  }
+
   Future<void> _sendReceipt(Sale sale) async {
     final t = ref.read(tProvider);
     final p = AppPalette.of(context);
@@ -123,6 +180,13 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       settings: settings,
       money: money,
     );
+    // Client (Oct 10): the text is on the clipboard right away, ready to
+    // paste into Instagram / WhatsApp.
+    await Clipboard.setData(ClipboardData(text: body));
+    if (!mounted) return;
+    AppHaptics.light();
+    // Top of the screen, above the contact sheet / system share sheet.
+    _showCopiedToast(t('receipt_copied'));
 
     Customer? customer;
     final customerId = sale.customerId;
@@ -301,10 +365,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               // Client (Oct 10): just the title and the sizes — no X, no text.
-              AppSheetHeader(
-                title: t('printer_paper_size'),
-                showClose: false,
-              ),
+              AppSheetHeader(title: t('printer_paper_size'), showClose: false),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                 child: Column(
@@ -386,9 +447,9 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     if (pending != null && pending.saleId != sale.id) {
       // Another undone receipt is still in the cart — finish that first so
       // its items are never overwritten.
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t('resale_pending'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t('resale_pending'))));
       context.push('/sell');
       return;
     }
@@ -407,9 +468,9 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       debugPrint('Undo sale failed: $e');
       if (mounted) {
         setState(() => _undoing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('save_failed'))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(t('save_failed'))));
       }
       return;
     }
