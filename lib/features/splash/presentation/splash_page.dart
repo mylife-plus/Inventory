@@ -6,12 +6,13 @@ import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 
-/// Branded splash — logo + app name, holds ~2.5s, then routes onward.
+/// Branded splash — logo + app name; moves on as soon as settings are
+/// loaded (short minimum so the logo is seen, not a fixed 2.5 s hold).
 class SplashPage extends ConsumerStatefulWidget {
   const SplashPage({super.key});
 
   static const asset = 'assets/images/splash.png';
-  static const minDuration = Duration(milliseconds: 2600);
+  static const minDuration = Duration(milliseconds: 700);
 
   @override
   ConsumerState<SplashPage> createState() => _SplashPageState();
@@ -42,7 +43,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
 
     _enter = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 600),
     );
     _pulse = AnimationController(
       vsync: this,
@@ -50,7 +51,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
     )..repeat(reverse: true);
     _exit = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 200),
     );
 
     _logoScale = Tween(begin: 0.72, end: 1.0).animate(
@@ -83,12 +84,14 @@ class _SplashPageState extends ConsumerState<SplashPage>
         curve: const Interval(0.7, 1.0, curve: Curves.easeOut),
       ),
     );
-    _glow = Tween(begin: 0.16, end: 0.34).animate(
-      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
-    );
-    _exitFade = Tween(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _exit, curve: Curves.easeInCubic),
-    );
+    _glow = Tween(
+      begin: 0.16,
+      end: 0.34,
+    ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
+    _exitFade = Tween(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _exit, curve: Curves.easeInCubic));
 
     _enter.forward();
 
@@ -132,6 +135,9 @@ class _SplashPageState extends ConsumerState<SplashPage>
     if (!mounted || _navigated) return;
 
     _navigated = true;
+    debugPrint(
+      'STARTUP splash->app after ${DateTime.now().difference(_started).inMilliseconds} ms',
+    );
     await _exit.forward();
     if (!mounted) return;
 
@@ -150,8 +156,8 @@ class _SplashPageState extends ConsumerState<SplashPage>
     final size = MediaQuery.sizeOf(context);
     final logo = (size.shortestSide * 0.4).clamp(156.0, 220.0);
 
-    ref.listen(shopSettingsProvider, (_, __) => _syncReadyFlags());
-    ref.listen(appPrefsProvider, (_, __) => _syncReadyFlags());
+    ref.listen(shopSettingsProvider, (_, _) => _syncReadyFlags());
+    ref.listen(appPrefsProvider, (_, _) => _syncReadyFlags());
 
     return Scaffold(
       backgroundColor: brandBg,
@@ -199,8 +205,15 @@ class _SplashPageState extends ConsumerState<SplashPage>
                             child: Image.asset(
                               SplashPage.asset,
                               fit: BoxFit.contain,
+                              // 1024 px source: decode at display size.
+                              cacheWidth:
+                                  (logo *
+                                          MediaQuery.devicePixelRatioOf(
+                                            context,
+                                          ))
+                                      .round(),
                               filterQuality: FilterQuality.high,
-                              errorBuilder: (_, __, ___) => Icon(
+                              errorBuilder: (_, _, _) => Icon(
                                 Icons.inventory_2_rounded,
                                 size: logo * 0.45,
                                 color: brandAccent,
