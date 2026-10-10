@@ -72,7 +72,7 @@ class AppBackupService {
         files: [XFile(file.path)],
         text: shareText ?? 'Inventory app data backup',
       ),
-      context,
+      (context != null && context.mounted) ? context : null,
     );
   }
 

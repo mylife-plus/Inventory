@@ -307,7 +307,7 @@ class ClientHeader extends ConsumerWidget {
                             context.push('/sell');
                           },
                         ),
-                      if (trailing != null) trailing!,
+                      ?trailing,
                     ],
                   ),
                 ),

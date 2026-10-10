@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
@@ -539,7 +538,7 @@ class _SettingsRow extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailing != null) trailing!,
+              ?trailing,
               if (value != null)
                 Text(
                   value!,
@@ -593,6 +592,7 @@ class _SettingsSwitchRow extends StatelessWidget {
           ),
           Switch.adaptive(
             value: value,
+            // ignore: deprecated_member_use
             activeColor: const Color(0xFF0A84FF),
             onChanged: (v) {
               AppHaptics.selection();

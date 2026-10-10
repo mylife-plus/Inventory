@@ -199,6 +199,7 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       }
     }
 
+    if (!mounted) return;
     final contacts = customer?.allContacts ?? const <CustomerContact>[];
     if (contacts.isEmpty) {
       await shareWithOrigin(ShareParams(text: body), context);
@@ -1199,7 +1200,7 @@ class ReceiptsYearPage extends ConsumerWidget {
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             itemCount: yearSales.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
               final sale = yearSales[i];
               return FadeSlide(

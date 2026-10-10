@@ -1,6 +1,5 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -555,6 +554,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                                   final exportItems = await ref
                                       .read(saleRepositoryProvider)
                                       .soldItems(from: range.$1, to: range.$2);
+                                  if (!context.mounted) return;
                                   await CsvExportService().exportTurnover(
                                     context: context,
                                     items: exportItems,

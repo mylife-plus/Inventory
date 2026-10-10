@@ -162,7 +162,7 @@ class CsvExportService {
         subject:
             '${L('csv_turnover_export', L('csv_turnover_export', 'Turnover Export'))} $stamp',
       ),
-      context,
+      (context != null && context.mounted) ? context : null,
     );
   }
 
@@ -284,7 +284,7 @@ class CsvExportService {
         subject:
             '${L('csv_receipts_export', L('csv_receipts_export', 'Receipts Export'))} $stamp',
       ),
-      context,
+      (context != null && context.mounted) ? context : null,
     );
   }
 

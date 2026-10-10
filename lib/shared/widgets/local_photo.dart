@@ -47,7 +47,7 @@ class LocalPhoto extends StatelessWidget {
             height: double.infinity,
             alignment: Alignment.center,
             filterQuality: FilterQuality.medium,
-            errorBuilder: (_, __, ___) => ColoredBox(
+            errorBuilder: (_, _, _) => ColoredBox(
               color: p.cardElevated,
               child: Center(
                 child: Icon(placeholderIcon, color: p.textMuted, size: 30),

@@ -24,8 +24,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   void bump() => gate.value++;
 
-  ref.listen(shopSettingsProvider, (_, __) => bump(), fireImmediately: true);
-  ref.listen(appPrefsProvider, (_, __) => bump(), fireImmediately: true);
+  ref.listen(shopSettingsProvider, (_, _) => bump(), fireImmediately: true);
+  ref.listen(appPrefsProvider, (_, _) => bump(), fireImmediately: true);
   ref.onDispose(gate.dispose);
 
   return GoRouter(
@@ -63,24 +63,24 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/splash',
-        builder: (_, __) => const SplashPage(),
+        builder: (_, _) => const SplashPage(),
       ),
       GoRoute(
         path: '/setup',
-        builder: (_, __) => const PrefsSetupPage(),
+        builder: (_, _) => const PrefsSetupPage(),
       ),
       GoRoute(
         path: '/onboarding',
-        builder: (_, __) => const OnboardingPage(),
+        builder: (_, _) => const OnboardingPage(),
       ),
       StatefulShellRoute.indexedStack(
-        builder: (_, __, shell) => MainShell(navigationShell: shell),
+        builder: (_, _, shell) => MainShell(navigationShell: shell),
         branches: [
           StatefulShellBranch(
             routes: [
               GoRoute(
                 path: '/inventory',
-                builder: (_, __) => const InventoryPage(),
+                builder: (_, _) => const InventoryPage(),
               ),
             ],
           ),
@@ -88,7 +88,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/customers',
-                builder: (_, __) => const CustomersPage(),
+                builder: (_, _) => const CustomersPage(),
               ),
             ],
           ),
@@ -96,7 +96,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/turnover',
-                builder: (_, __) => const TurnoverPage(),
+                builder: (_, _) => const TurnoverPage(),
               ),
             ],
           ),
@@ -104,7 +104,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/inventory/item',
-        builder: (_, __) => const ItemEditorPage(),
+        builder: (_, _) => const ItemEditorPage(),
       ),
       GoRoute(
         path: '/inventory/item/:id',
@@ -129,15 +129,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/sell',
-        builder: (_, __) => const SellPage(),
+        builder: (_, _) => const SellPage(),
       ),
       GoRoute(
         path: '/sell/add',
-        builder: (_, __) => const SellAddProductsPage(),
+        builder: (_, _) => const SellAddProductsPage(),
       ),
       GoRoute(
         path: '/sell/scan',
-        builder: (_, __) => const SellScannerPage(),
+        builder: (_, _) => const SellScannerPage(),
       ),
       GoRoute(
         path: '/sell/customer',
@@ -153,7 +153,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/customers/new',
-        builder: (_, __) => const CustomerEditorPage(),
+        builder: (_, _) => const CustomerEditorPage(),
       ),
       GoRoute(
         path: '/customers/edit/:id',
@@ -167,7 +167,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/receipts',
-        builder: (_, __) => const ReceiptsYearsPage(),
+        builder: (_, _) => const ReceiptsYearsPage(),
       ),
       GoRoute(
         path: '/receipts/year/:year',
@@ -178,11 +178,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/settings',
-        builder: (_, __) => const SettingsPage(),
+        builder: (_, _) => const SettingsPage(),
       ),
       GoRoute(
         path: '/settings/receipt',
-        builder: (_, __) => const ReceiptDetailsSettingsPage(),
+        builder: (_, _) => const ReceiptDetailsSettingsPage(),
       ),
     ],
   );

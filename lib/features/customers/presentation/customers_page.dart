@@ -636,7 +636,7 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                     readOnly: true,
                     canRequestFocus: false,
                     enableInteractiveSelection: false,
-                    onTap: () => _pickSocial(btnCtx, t, p),
+                    onTap: () => _pickSocial(btnCtx, t.call, p),
                     decoration: InputDecoration(
                       hintText: t('add_social'),
                       suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
@@ -674,7 +674,7 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
               readOnly: true,
               canRequestFocus: false,
               enableInteractiveSelection: false,
-              onTap: () => _showAddCustomFieldSheet(context, t, p),
+              onTap: () => _showAddCustomFieldSheet(context, t.call, p),
               decoration: InputDecoration(
                 hintText: t('add_field'),
                 suffixIcon: const Icon(Icons.add_rounded, size: 26),

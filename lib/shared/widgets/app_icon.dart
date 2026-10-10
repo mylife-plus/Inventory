@@ -71,7 +71,7 @@ class AppIcon extends StatelessWidget {
         gaplessPlayback: true,
         cacheWidth: cache,
         cacheHeight: cache,
-        errorBuilder: (_, __, ___) => Icon(
+        errorBuilder: (_, _, _) => Icon(
           Icons.broken_image_outlined,
           size: size,
           color: color ?? Colors.grey,
