@@ -297,6 +297,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(SellPage), findsOneWidget);
       expect(find.textContaining('Editing receipt'), findsOneWidget);
+      expect(find.textContaining('for Alice'), findsOneWidget);
       return (c, router);
     }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
+import 'package:inventory_app/core/l10n/s.dart';
 import 'package:inventory_app/core/notifications/in_app_notifications.dart';
 import 'package:inventory_app/core/qr/qr_payload.dart';
 import 'package:inventory_app/core/receipts/receipt_details_gate.dart';
@@ -301,6 +302,18 @@ class _SellPageState extends ConsumerState<SellPage> {
     ref.read(editingSaleLinesProvider.notifier).state = null;
   }
 
+  /// Who the reopened receipt is for (the customer it will complete with).
+  String _resaleCustomerName(S t, ResaleDraft draft) {
+    final preset = ref.watch(sellCustomerProvider);
+    if (preset != null) {
+      return preset.id == '__guest__' ? t('guest') : preset.displayName;
+    }
+    final name = draft.customerName;
+    return (name == null || name.isEmpty || name == 'Guest')
+        ? t('guest')
+        : name;
+  }
+
   void _addToCart(InventoryItem item) {
     FocusScope.of(context).unfocus();
     final cart = ref.read(cartProvider);
@@ -522,7 +535,10 @@ class _SellPageState extends ConsumerState<SellPage> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          t.tr('resale_hint', {'n': resale.receiptNumber}),
+                          t.tr('resale_hint_customer', {
+                            'n': resale.receiptNumber,
+                            'c': _resaleCustomerName(t, resale),
+                          }),
                           style: TextStyle(
                             color: p.textSecondary,
                             fontWeight: FontWeight.w600,
