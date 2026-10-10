@@ -42,18 +42,17 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   bool _loading = true;
   bool _busy = false;
 
-  /// True while a background PDF rebuild is in flight (Print shows hourglass).
-  bool _pdfBuilding = false;
   InventoryItem? _item;
   String? _payload;
   String _defaultSubtitle = '';
 
-  /// Pre-built label PDF — Print only opens the sheet when this matches
-  /// [_pdfCacheKey] so iOS never gets an empty/slow onLayout rebuild.
-  Uint8List? _pdfBytes;
-  String? _pdfCacheKey;
-  Timer? _pdfDebounce;
-  int _pdfGen = 0;
+  /// Renders the label image (what the print preview + print use) in the
+  /// background once typing pauses, so Print → preview is instant.
+  Timer? _warmTimer;
+
+  /// QR widget rebuilt only when its data changes (not on every keystroke).
+  String? _qrKey;
+  Widget? _qrWidget;
 
   late final TextEditingController _titleCtrl;
   late final TextEditingController _subtitleCtrl;
@@ -68,67 +67,48 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     _titleCtrl.addListener(_onFieldsChanged);
     _subtitleCtrl.addListener(_onFieldsChanged);
     _linkCtrl.addListener(_onFieldsChanged);
-    // Warm fonts immediately (also started from main.dart).
-    unawaited(PrintService.preload());
-    _load();
+    // Item from the in-memory list → first frame already shows the label
+    // (no loader flash); falls back to the DB.
+    final cached = ref
+        .read(inventoryItemsProvider)
+        .valueOrNull
+        ?.where((i) => i.id == widget.itemId)
+        .firstOrNull;
+    if (cached != null) {
+      _apply(cached);
+    } else {
+      _load();
+    }
   }
 
   void _onFieldsChanged() {
-    if (!mounted) return;
+    if (!mounted || _loading) return;
     setState(() {}); // live preview
-    _schedulePdfRebuild();
+    _scheduleWarm(const Duration(milliseconds: 600));
+  }
+
+  void _scheduleWarm(Duration after) {
+    _warmTimer?.cancel();
+    _warmTimer = Timer(after, () {
+      if (!mounted || _payload == null) return;
+      unawaited(
+        PrintService.rasterQrLabelPng(
+          title: _labelTitle,
+          subtitle: _labelSubtitle,
+          qrData: _qrData,
+          companyName: _companyName,
+        ).then<void>(
+          (_) {},
+          onError: (Object e) {
+            debugPrint('QR label warm failed: $e');
+          },
+        ),
+      );
+    });
   }
 
   String get _companyName =>
       ref.read(shopSettingsProvider).valueOrNull?.companyName ?? '';
-
-  String get _pdfKey =>
-      '$_labelTitle\x1f$_labelSubtitle\x1f$_qrData\x1f${_companyName.trim()}';
-
-  bool get _pdfReady =>
-      _pdfBytes != null && _pdfBytes!.isNotEmpty && _pdfCacheKey == _pdfKey;
-
-  void _schedulePdfRebuild() {
-    _pdfDebounce?.cancel();
-    _pdfDebounce = Timer(const Duration(milliseconds: 200), () {
-      unawaited(_rebuildPdfCache());
-    });
-  }
-
-  Future<void> _rebuildPdfCache() async {
-    if (_payload == null || _item == null) return;
-    final gen = ++_pdfGen;
-    final key = _pdfKey;
-    if (_pdfCacheKey == key && _pdfBytes != null && _pdfBytes!.isNotEmpty) {
-      if (mounted && _pdfBuilding) setState(() => _pdfBuilding = false);
-      return;
-    }
-    if (mounted) setState(() => _pdfBuilding = true);
-    try {
-      await PrintService.preload();
-      final bytes = await PrintService.prepareQrLabelPrintPdf(
-        title: _labelTitle,
-        subtitle: _labelSubtitle,
-        qrData: _qrData,
-        companyName: _companyName,
-      );
-      if (!mounted || gen != _pdfGen) return;
-      setState(() {
-        _pdfBytes = bytes;
-        _pdfCacheKey = key;
-        _pdfBuilding = false;
-      });
-    } catch (e, st) {
-      debugPrint('QR label PDF cache failed: $e\n$st');
-      if (mounted && gen == _pdfGen) {
-        setState(() {
-          _pdfBuilding = false;
-          _pdfBytes = null;
-          _pdfCacheKey = null;
-        });
-      }
-    }
-  }
 
   Future<void> _load() async {
     final item = await ref
@@ -138,6 +118,11 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
       if (mounted) context.pop();
       return;
     }
+    if (!mounted) return;
+    setState(() => _apply(item));
+  }
+
+  void _apply(InventoryItem item) {
     final settings = ref.read(shopSettingsProvider).valueOrNull;
     final money = MoneyFormatter(
       symbol: settings?.currencySymbol ?? '€',
@@ -177,14 +162,14 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
         : saved;
     _linkCtrl.text = item.qrLink ?? '';
 
-    if (mounted) setState(() => _loading = false);
-    // Build the print PDF now so the first tap is O(1).
-    unawaited(_rebuildPdfCache());
+    _loading = false;
+    // After the page has slid in (never during the open animation).
+    _scheduleWarm(const Duration(milliseconds: 450));
   }
 
   @override
   void dispose() {
-    _pdfDebounce?.cancel();
+    _warmTimer?.cancel();
     _titleCtrl.removeListener(_onFieldsChanged);
     _subtitleCtrl.removeListener(_onFieldsChanged);
     _linkCtrl.removeListener(_onFieldsChanged);
@@ -214,18 +199,29 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     link: _labelLink,
   );
 
+  /// Saves the label texts — only when they changed (an unchanged label
+  /// never rewrites the item / reloads the inventory list). Not awaited by
+  /// Back / Print, so leaving the page is instant.
   Future<void> _persist() async {
     final item = _item;
     if (item == null) return;
     // Empty = "use the default", so defaults follow later title/price edits.
+    final qrTitle = _labelTitle == item.title ? '' : _labelTitle;
+    final qrSubtitle = _labelSubtitle == _defaultSubtitle ? '' : _labelSubtitle;
+    final qrLink = _linkCtrl.text.trim();
+    if ((item.qrTitle ?? '') == qrTitle &&
+        (item.qrSubtitle ?? '') == qrSubtitle &&
+        (item.qrLink ?? '') == qrLink) {
+      return;
+    }
     final updated = item.copyWith(
-      qrTitle: _labelTitle == item.title ? '' : _labelTitle,
-      qrSubtitle: _labelSubtitle == _defaultSubtitle ? '' : _labelSubtitle,
-      qrLink: _linkCtrl.text.trim(),
+      qrTitle: qrTitle,
+      qrSubtitle: qrSubtitle,
+      qrLink: qrLink,
       updatedAt: DateTime.now(),
     );
-    await ref.read(inventoryItemsProvider.notifier).upsert(updated);
     _item = updated;
+    await ref.read(inventoryItemsProvider.notifier).upsert(updated);
   }
 
   /// Print → full-screen print preview (labels per page + Print there,
@@ -233,12 +229,9 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   /// the background, so the preview's Print is instant.
   Future<void> _print() async {
     if (_busy || _payload == null) return;
-    setState(() => _busy = true);
     try {
-      await _persist();
-      if (!_pdfReady) unawaited(_rebuildPdfCache());
-      if (!mounted) return;
-      setState(() => _busy = false);
+      unawaited(_persist());
+      FocusScope.of(context).unfocus();
       await context.push(
         '/inventory/qr/${widget.itemId}/print',
         extra: QrPrintArgs(
@@ -251,7 +244,6 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     } catch (e, st) {
       debugPrint('Open print preview failed: $e\n$st');
       if (mounted) {
-        setState(() => _busy = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${ref.read(tProvider)('print_failed')}: $e')),
         );
@@ -266,7 +258,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     setState(() => _busy = true);
     try {
       await _persist();
-      if (!mounted) return;
+      if (!mounted || !buttonContext.mounted) return;
       final company =
           ref.read(shopSettingsProvider).valueOrNull?.companyName.trim() ?? '';
       final buffer = StringBuffer();
@@ -304,25 +296,42 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
   }
 
   Future<void> _done() async {
-    // Back always works, even while a print job is still open.
-    setState(() => _busy = true);
-    try {
-      await _persist();
-      if (!mounted) return;
-      if (context.canPop()) {
-        context.pop();
-      } else {
-        context.go('/inventory');
-      }
-    } catch (e) {
-      debugPrint('Saving QR label failed: $e');
-      if (mounted) {
-        setState(() => _busy = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(ref.read(tProvider)('save_failed'))),
-        );
-      }
+    // Leave at once; the (rare) save finishes in the background.
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final failed = ref.read(tProvider)('save_failed');
+    unawaited(
+      _persist().catchError((Object e) {
+        debugPrint('Saving QR label failed: $e');
+        messenger?.showSnackBar(SnackBar(content: Text(failed)));
+      }),
+    );
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/inventory');
     }
+  }
+
+  Widget _qr() {
+    final data = _qrData;
+    if (_qrKey == data && _qrWidget != null) return _qrWidget!;
+    _qrKey = data;
+    return _qrWidget = RepaintBoundary(
+      child: QrImageView(
+        data: data,
+        size: 150,
+        backgroundColor: Colors.white,
+        eyeStyle: const QrEyeStyle(
+          eyeShape: QrEyeShape.square,
+          color: Color(0xFF001830),
+        ),
+        dataModuleStyle: const QrDataModuleStyle(
+          dataModuleShape: QrDataModuleShape.square,
+          color: Color(0xFF001830),
+        ),
+        errorCorrectionLevel: QrErrorCorrectLevel.M,
+      ),
+    );
   }
 
   @override
@@ -386,20 +395,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: QrImageView(
-                      data: _qrData,
-                      size: 150,
-                      backgroundColor: Colors.white,
-                      eyeStyle: const QrEyeStyle(
-                        eyeShape: QrEyeShape.square,
-                        color: Color(0xFF001830),
-                      ),
-                      dataModuleStyle: const QrDataModuleStyle(
-                        dataModuleShape: QrDataModuleShape.square,
-                        color: Color(0xFF001830),
-                      ),
-                      errorCorrectionLevel: QrErrorCorrectLevel.M,
-                    ),
+                    child: _qr(),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -470,9 +466,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
               Expanded(
                 child: AccentButton(
                   label: t('print_label'),
-                  icon: (_busy || (_pdfBuilding && !_pdfReady))
-                      ? Icons.hourglass_top_rounded
-                      : Icons.print_rounded,
+                  icon: Icons.print_rounded,
                   onPressed: _busy ? null : _print,
                 ),
               ),
@@ -495,7 +489,6 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     );
   }
 }
-
 
 class _RoundAction extends StatelessWidget {
   const _RoundAction({required this.icon, this.onTap});
@@ -523,4 +516,3 @@ class _RoundAction extends StatelessWidget {
     );
   }
 }
-

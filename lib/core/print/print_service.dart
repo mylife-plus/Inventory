@@ -1,8 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:pdf/pdf.dart';
@@ -65,15 +63,26 @@ class PrintService {
   /// Bundled Inter TTFs — same family as the UI. Loaded via rootBundle only
   /// (never PdfGoogleFonts / network). Sequential loads avoid a Dart 3.10
   /// Future.wait + SynchronousFuture bug that returned an empty list.
+  static ({Uint8List regular, Uint8List bold})? _fontBytesCache;
+
+  /// Raw Inter TTF bytes (sent to the PDF worker isolate).
+  static Future<({Uint8List regular, Uint8List bold})> _fontBytes() async {
+    final cached = _fontBytesCache;
+    if (cached != null) return cached;
+    final r = await rootBundle.load('assets/google_fonts/Inter-Regular.ttf');
+    final b = await rootBundle.load('assets/google_fonts/Inter-Bold.ttf');
+    return _fontBytesCache = (
+      regular: Uint8List.sublistView(r),
+      bold: Uint8List.sublistView(b),
+    );
+  }
+
   static Future<({pw.Font regular, pw.Font bold})> _fonts() async {
     final cached = _fontCache;
     if (cached != null) return cached;
-    final regularData = await rootBundle.load(
-      'assets/google_fonts/Inter-Regular.ttf',
-    );
-    final boldData = await rootBundle.load(
-      'assets/google_fonts/Inter-Bold.ttf',
-    );
+    final raw = await _fontBytes();
+    final regularData = ByteData.sublistView(raw.regular);
+    final boldData = ByteData.sublistView(raw.bold);
     final fonts = (
       regular: pw.Font.ttf(regularData),
       bold: pw.Font.ttf(boldData),
@@ -91,7 +100,7 @@ class PrintService {
   /// print opens instantly.
   static Future<void> preload() async {
     try {
-      await _fonts();
+      await _fontBytes();
     } catch (e, st) {
       // Printing will surface the error to the user; log for device debugging.
       debugPrint('PrintService.preload failed: $e\n$st');
@@ -225,9 +234,7 @@ class PrintService {
 
     Future<Uint8List> wrapOnly(PdfPageFormat requested) async {
       final target = _finiteFormat(android ? pageFormat : requested);
-      final out = sheet
-          ? await wrapLabelGridPdf(png, count, target)
-          : await wrapLabelImagePdf(png, target);
+      final out = await labelSheetPdf(png, count, target);
       debugPrint(
         'QR label print open: ${out.length} bytes '
         '(${target.width.toStringAsFixed(1)}x${target.height.toStringAsFixed(1)}pt'
@@ -329,8 +336,39 @@ class PrintService {
     return best;
   }
 
+  static final Map<String, Uint8List> _sheetCache = {};
+
+  /// The print page for [count] labels of [png] on [format], cached so the
+  /// print preview can build it ahead of time and the print window opens
+  /// with it instantly. Built off the UI thread.
+  static Future<Uint8List> labelSheetPdf(
+    Uint8List png,
+    int count,
+    PdfPageFormat format,
+  ) async {
+    final f = _finiteFormat(format);
+    final key =
+        '${identityHashCode(png)}:${png.length}:$count:${f.width}x${f.height}';
+    final hit = _sheetCache[key];
+    if (hit != null) return hit;
+    final out = count > 1
+        ? await wrapLabelGridPdf(png, count, f)
+        : await wrapLabelImagePdf(png, f);
+    if (_sheetCache.length > 12) _sheetCache.clear();
+    return _sheetCache[key] = out;
+  }
+
+  /// Page format Print uses for [count] labels (A4 grid, or the single
+  /// sticker page: A6 on Android, 70×100 mm on iOS).
+  static PdfPageFormat labelSheetFormat(int count) {
+    if (count > 1) return PdfPageFormat.a4;
+    final bool android = !kIsWeb && Platform.isAndroid;
+    return android ? PdfPageFormat.a6 : _finiteFormat(qrLabelFormat);
+  }
+
   /// [count] copies of the rasterized label on one [format] page (grid with
   /// light cut lines). Image-only like [wrapLabelImagePdf] — no fonts.
+  /// Encoded in a worker isolate (PNG decode + PDF save are pure Dart).
   static Future<Uint8List> wrapLabelGridPdf(
     Uint8List png,
     int count,
@@ -341,6 +379,21 @@ class PrintService {
       throw StateError('Cannot wrap tiny PNG (${png.length} bytes)');
     }
     final pageFormat = _finiteFormat(format);
+    final bytes = await compute(_gridPdfWorker, (
+      png: png,
+      count: count,
+      w: pageFormat.width,
+      h: pageFormat.height,
+    ));
+    _validatePdf(bytes, 'grid');
+    return bytes;
+  }
+
+  static Future<Uint8List> _gridPdf(
+    Uint8List png,
+    int count,
+    PdfPageFormat pageFormat,
+  ) async {
     const margin = labelSheetMargin;
     const gap = labelSheetGap;
     final grid = qrLabelGrid(
@@ -384,9 +437,7 @@ class PrintService {
         ),
       ),
     );
-    final bytes = await doc.save();
-    _validatePdf(bytes, 'grid');
-    return bytes;
+    return doc.save();
   }
 
   static void _validatePdf(Uint8List bytes, String label) {
@@ -453,6 +504,20 @@ class PrintService {
       throw StateError('Cannot wrap tiny PNG (${png.length} bytes)');
     }
     final pageFormat = _finiteFormat(format);
+    final bytes = await compute(_imagePdfWorker, (
+      png: png,
+      count: 1,
+      w: pageFormat.width,
+      h: pageFormat.height,
+    ));
+    _validatePdf(bytes, 'wrap');
+    return bytes;
+  }
+
+  static Future<Uint8List> _imagePdf(
+    Uint8List png,
+    PdfPageFormat pageFormat,
+  ) async {
     final doc = pw.Document();
     final image = pw.MemoryImage(png);
     doc.addPage(
@@ -470,9 +535,7 @@ class PrintService {
         },
       ),
     );
-    final bytes = await doc.save();
-    _validatePdf(bytes, 'wrap');
-    return bytes;
+    return doc.save();
   }
 
   /// Vector QR label PDF bytes (source art before raster). Cached per content+format.
@@ -492,17 +555,18 @@ class PrintService {
       return hit;
     }
 
-    final fonts = await _fonts();
-    final bytes = await _buildQrDoc(
-      doc: pw.Document(),
-      fonts: fonts,
-      format: format,
-      qrSize: labelQrSize,
+    final fonts = await _fontBytes();
+    // Font subsetting + PDF encoding are pure Dart: worker isolate.
+    final bytes = await compute(_qrDocWorker, (
+      regular: fonts.regular,
+      bold: fonts.bold,
+      w: format.width,
+      h: format.height,
       company: company,
       title: title,
       subtitle: subtitle,
       qrData: qrData,
-    );
+    ));
     _validatePdf(bytes, 'vector');
     _labelPdfKey = key;
     _labelPdfBytes = bytes;
@@ -871,3 +935,37 @@ class PrintService {
     );
   }
 }
+
+typedef _SheetJob = ({Uint8List png, int count, double w, double h});
+
+Future<Uint8List> _gridPdfWorker(_SheetJob j) =>
+    PrintService._gridPdf(j.png, j.count, PdfPageFormat(j.w, j.h));
+
+Future<Uint8List> _imagePdfWorker(_SheetJob j) =>
+    PrintService._imagePdf(j.png, PdfPageFormat(j.w, j.h));
+
+Future<Uint8List> _qrDocWorker(
+  ({
+    Uint8List regular,
+    Uint8List bold,
+    double w,
+    double h,
+    String company,
+    String title,
+    String subtitle,
+    String qrData,
+  })
+  j,
+) => PrintService._buildQrDoc(
+  doc: pw.Document(),
+  fonts: (
+    regular: pw.Font.ttf(ByteData.sublistView(j.regular)),
+    bold: pw.Font.ttf(ByteData.sublistView(j.bold)),
+  ),
+  format: PdfPageFormat(j.w, j.h),
+  qrSize: PrintService.labelQrSize,
+  company: j.company,
+  title: j.title,
+  subtitle: j.subtitle,
+  qrData: j.qrData,
+);
