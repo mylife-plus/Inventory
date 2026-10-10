@@ -28,16 +28,6 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- "Open as PDF": hands cached PDFs to other apps (read-only grant). -->
-        <provider
-            android:name=".PdfFileProvider"
-            android:authorities="${applicationId}.pdfprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/pdf_paths" />
-        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -57,10 +47,6 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:mimeType="application/pdf"/>
         </intent>
         <intent>
             <action android:name="android.intent.action.DIAL"/>

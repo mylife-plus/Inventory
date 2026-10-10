@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- PDFs handed to other apps ("Open as PDF"): app cache only. -->
-<paths>
-    <cache-path name="pdfs" path="pdfs/" />
-</paths>

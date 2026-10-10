@@ -42,8 +42,3 @@ android {
 flutter {
     source = "../.."
 }
-
-dependencies {
-    // FileProvider for "Open as PDF".
-    implementation("androidx.core:core-ktx:1.13.1")
-}

@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/l10n/s.dart';
-import 'package:inventory_app/core/print/pdf_open.dart';
 import 'package:inventory_app/core/print/print_service.dart';
 import 'package:inventory_app/core/receipts/receipt_details_gate.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
@@ -243,11 +242,8 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     final t = ref.read(tProvider);
     final initial = await PrintService.lastReceiptPaper();
     if (!mounted) return;
-    final picked = await _pickReceiptPaper(t, initial);
-    if (picked == null || !mounted) return;
-    // "pdf:<paper>" = Open as PDF in another app; "<paper>" = system print.
-    final asPdf = picked.startsWith('pdf:');
-    final paper = asPdf ? picked.substring(4) : picked;
+    final paper = await _pickReceiptPaper(t, initial);
+    if (paper == null || !mounted) return;
     unawaited(PrintService.saveReceiptPaper(paper));
     final shop = ref.read(shopSettingsProvider).valueOrNull ?? fallback;
     try {
@@ -260,16 +256,6 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
         t: t.call,
         dateText: formatDateTimeShort(sale.createdAt, t.code),
       );
-      if (asPdf) {
-        if (!mounted) return;
-        await openPdfExternally(
-          bytes: pdf.bytes,
-          name: 'Receipt-${sale.id.substring(0, 8)}',
-          chooserTitle: t('open_pdf_with'),
-          context: context,
-        );
-        return;
-      }
       await PrintService.layoutReceiptPdf(
         bytes: pdf.bytes,
         format: pdf.format,
@@ -314,9 +300,10 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Client (Oct 10): just the title and the sizes — no X, no text.
               AppSheetHeader(
                 title: t('printer_paper_size'),
-                subtitle: t('receipt_paper_pdf_hint'),
+                showClose: false,
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -329,8 +316,6 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                         subtitle: o.sub,
                         selected: o.id == initial,
                         onTap: () => Navigator.of(ctx).pop(o.id),
-                        onPdf: () => Navigator.of(ctx).pop('pdf:${o.id}'),
-                        pdfLabel: t('open_pdf'),
                       ),
                       const SizedBox(height: 10),
                     ],
@@ -1215,8 +1200,6 @@ class _PaperOptionRow extends StatelessWidget {
     required this.subtitle,
     required this.selected,
     required this.onTap,
-    required this.onPdf,
-    required this.pdfLabel,
   });
 
   final IconData icon;
@@ -1224,10 +1207,6 @@ class _PaperOptionRow extends StatelessWidget {
   final String subtitle;
   final bool selected;
   final VoidCallback onTap;
-
-  /// Open this size as a PDF in another app instead of printing.
-  final VoidCallback onPdf;
-  final String pdfLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1287,46 +1266,7 @@ class _PaperOptionRow extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 6),
-            Tooltip(
-              message: pdfLabel,
-              child: Pressable(
-                onTap: () {
-                  AppHaptics.selection();
-                  onPdf();
-                },
-                child: Container(
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: p.cardElevated,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: p.stroke),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.picture_as_pdf_rounded,
-                        size: 18,
-                        color: p.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'PDF',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12.5,
-                          color: p.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Icon(Icons.print_rounded, size: 22, color: p.textSecondary),
           ],
         ),

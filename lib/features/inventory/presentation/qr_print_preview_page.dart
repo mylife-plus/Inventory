@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
-import 'package:inventory_app/core/print/pdf_open.dart';
 import 'package:inventory_app/core/print/print_service.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
@@ -115,38 +114,6 @@ class _QrPrintPreviewPageState extends ConsumerState<QrPrintPreviewPage> {
     }
   }
 
-  /// Same sheet as Print, opened in another app (PDF viewer / share).
-  Future<void> _openPdf(BuildContext buttonContext) async {
-    if (_busy) return;
-    final t = ref.read(tProvider);
-    setState(() => _busy = true);
-    try {
-      final bytes = await PrintService.qrLabelSheetPdf(
-        title: _a.title,
-        subtitle: _a.subtitle,
-        qrData: _a.qrData,
-        companyName: _a.company,
-        perPage: _perPage,
-      );
-      if (!mounted) return;
-      setState(() => _busy = false);
-      await openPdfExternally(
-        bytes: bytes,
-        name: 'QR-${_a.title}-$_perPage',
-        chooserTitle: t('open_pdf_with'),
-        context: buttonContext.mounted ? buttonContext : null,
-      );
-    } catch (e, st) {
-      debugPrint('Open label PDF failed: $e\n$st');
-      if (mounted) {
-        setState(() => _busy = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${t('print_failed')}: $e')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final p = AppPalette.of(context);
@@ -228,16 +195,6 @@ class _QrPrintPreviewPageState extends ConsumerState<QrPrintPreviewPage> {
                     ? Icons.hourglass_top_rounded
                     : Icons.print_rounded,
                 onPressed: _busy ? null : _print,
-              ),
-              const SizedBox(height: 8),
-              Builder(
-                builder: (btnCtx) => AccentButton(
-                  label: t('open_pdf'),
-                  icon: Icons.picture_as_pdf_rounded,
-                  color: p.cardElevated,
-                  foreground: p.textPrimary,
-                  onPressed: _busy ? null : () => _openPdf(btnCtx),
-                ),
               ),
             ],
           ),
