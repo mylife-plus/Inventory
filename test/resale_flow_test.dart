@@ -15,7 +15,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Oct 9 client review (#5): Items Sold → receipt → Edit → Continue undoes
 /// the sale (stock back, receipt gone), puts items + customer in the Sell
 /// cart, and completing again re-creates the receipt (same number, date).
-/// Cancel anywhere in that flow never removes items from the cart.
+/// Oct 10 evening: Cancel of the edit (Sell X / Back) = nothing happened —
+/// the original receipt + stock come back and the cart is blank. Add Items
+/// X still only restores the cart.
 final _date = DateTime(2026, 10, 1, 9, 30);
 
 final _alice = Customer(id: 'c1', name: 'Alice', createdAt: _date);
@@ -105,6 +107,18 @@ class _Sales implements SaleRepository {
       createdAt: createdAt ?? DateTime.now(),
       lines: lines,
     );
+  }
+
+  @override
+  Future<void> restoreSale(Sale sale) async {
+    if (db.sales.containsKey(sale.id)) return;
+    db.sales[sale.id] = sale;
+    for (final l in sale.lines) {
+      if (db.stock.containsKey(l.itemId)) {
+        final v = db.stock[l.itemId]! - l.quantity;
+        db.stock[l.itemId] = v < 0 ? 0 : v;
+      }
+    }
   }
 
   @override
@@ -261,7 +275,51 @@ void main() {
     expect(c2.read(sellCustomerProvider)?.id, 'c1');
   });
 
-  group('Cancel never removes items', () {
+  test(
+    'Cancel after changing the cart puts the receipt back as it was',
+    () async {
+      final db = _Db();
+      final c = _container(db);
+      final sale = await _sold(c, customer: _alice);
+      final before = Map.of(db.stock);
+      await startResale(c.read, sale, guestName: 'Guest');
+      c.read(cartProvider.notifier).setQty('a', 1);
+      c.read(cartProvider.notifier).removeItem('b');
+      c.read(resaleDraftProvider.notifier).updateLines(c.read(cartProvider));
+
+      await cancelResale(c.read);
+
+      expect(db.stock, before);
+      expect(db.sales.keys, [sale.id]);
+      expect(db.sales[sale.id]!.lines, _lines);
+      expect(db.sales[sale.id]!.customerId, 'c1');
+      expect(db.sales[sale.id]!.createdAt, sale.createdAt);
+      expect(c.read(cartProvider), isEmpty);
+      expect(c.read(sellCustomerProvider), isNull);
+      expect(c.read(resaleDraftProvider), isNull);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(ResaleDraftNotifier.prefKey), isNull);
+    },
+  );
+
+  test('Cancel after an app kill still restores the original lines', () async {
+    final db = _Db();
+    final c = _container(db);
+    final sale = await _sold(c, customer: _alice);
+    await startResale(c.read, sale, guestName: 'Guest');
+    c.read(cartProvider.notifier).setQty('a', 1);
+    c.read(resaleDraftProvider.notifier).updateLines(c.read(cartProvider));
+    await Future<void>.delayed(Duration.zero);
+
+    final c2 = _container(db);
+    await c2.read(resaleDraftProvider.notifier).loaded;
+    await c2.read(salesProvider.future);
+    await cancelResale(c2.read);
+    expect(db.sales[sale.id]!.lines, _lines);
+    expect(db.stock, {'a': 2, 'b': 4});
+  });
+
+  group('Cancel of the edit', () {
     Future<(ProviderContainer, GoRouter)> openSell(WidgetTester tester) async {
       tester.view.physicalSize = const Size(412 * 3, 915 * 3);
       tester.view.devicePixelRatio = 3;
@@ -296,27 +354,35 @@ void main() {
       router.push('/sell');
       await tester.pumpAndSettle();
       expect(find.byType(SellPage), findsOneWidget);
-      expect(find.textContaining('Editing receipt'), findsOneWidget);
-      expect(find.textContaining('for Alice'), findsOneWidget);
+      // Client (Oct 10): no 'Editing receipt' info box.
+      expect(find.textContaining('Editing receipt'), findsNothing);
       return (c, router);
     }
 
-    testWidgets('Sell X keeps items + customer', (tester) async {
+    testWidgets('Sell X restores the receipt, cart blank', (tester) async {
       final (c, _) = await openSell(tester);
       await tester.tap(find.byIcon(Icons.close_rounded).last);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
       await tester.pumpAndSettle();
       expect(find.text('items sold'), findsOneWidget);
-      expect(c.read(cartProvider), _lines);
-      expect(c.read(sellCustomerProvider)?.id, 'c1');
-      expect(c.read(resaleDraftProvider), isNotNull);
+      expect(c.read(cartProvider), isEmpty);
+      expect(c.read(sellCustomerProvider), isNull);
+      expect(c.read(resaleDraftProvider), isNull);
+      expect(c.read(salesProvider).value?.length, 1);
     });
 
-    testWidgets('System Back keeps items', (tester) async {
+    testWidgets('System Back = Cancel too', (tester) async {
       final (c, _) = await openSell(tester);
       await tester.binding.handlePopRoute();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
       await tester.pumpAndSettle();
       expect(find.text('items sold'), findsOneWidget);
-      expect(c.read(cartProvider), _lines);
+      expect(c.read(cartProvider), isEmpty);
+      expect(c.read(resaleDraftProvider), isNull);
     });
 
     testWidgets('Add Items X restores the cart', (tester) async {

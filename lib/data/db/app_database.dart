@@ -41,10 +41,7 @@ class AppDatabase {
             receipt_qr_link TEXT NOT NULL DEFAULT ''
           )
         ''');
-        await db.insert('shop_settings', {
-          'id': 1,
-          'currency_symbol': '€',
-        });
+        await db.insert('shop_settings', {'id': 1, 'currency_symbol': '€'});
 
         await db.execute('''
           CREATE TABLE categories (
@@ -125,11 +122,9 @@ class AppDatabase {
         await _ensureInventoryItemColumns(db);
         if (oldVersion < 8) {
           // Old installs defaulted to TND; Euro is the first-launch default.
-          await db.update(
-            'shop_settings',
-            {'currency_symbol': '€'},
-            where: "currency_symbol = 'TND'",
-          );
+          await db.update('shop_settings', {
+            'currency_symbol': '€',
+          }, where: "currency_symbol = 'TND'");
         }
       },
       onOpen: (db) async {
@@ -165,7 +160,6 @@ class AppDatabase {
         AND customer_name != 'Guest'
     ''');
   }
-
 
   /// Idempotent: add any missing shop settings columns (safe for old installs
   /// and restored backups).

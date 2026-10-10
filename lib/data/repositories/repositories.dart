@@ -25,8 +25,8 @@ final saleRepositoryProvider = Provider<SaleRepository>((ref) {
 
 final shopSettingsProvider =
     AsyncNotifierProvider<ShopSettingsNotifier, ShopSettings>(
-  ShopSettingsNotifier.new,
-);
+      ShopSettingsNotifier.new,
+    );
 
 class ShopSettingsNotifier extends AsyncNotifier<ShopSettings> {
   @override
@@ -40,8 +40,8 @@ class ShopSettingsNotifier extends AsyncNotifier<ShopSettings> {
 
 final categoriesProvider =
     AsyncNotifierProvider<CategoriesNotifier, List<Category>>(
-  CategoriesNotifier.new,
-);
+      CategoriesNotifier.new,
+    );
 
 class CategoriesNotifier extends AsyncNotifier<List<Category>> {
   @override
@@ -49,16 +49,20 @@ class CategoriesNotifier extends AsyncNotifier<List<Category>> {
       ref.read(inventoryRepositoryProvider).listCategories();
 
   Future<Category> getOrCreate(String name) async {
-    final cat = await ref.read(inventoryRepositoryProvider).getOrCreateCategory(name);
-    state = AsyncData(await ref.read(inventoryRepositoryProvider).listCategories());
+    final cat = await ref
+        .read(inventoryRepositoryProvider)
+        .getOrCreateCategory(name);
+    state = AsyncData(
+      await ref.read(inventoryRepositoryProvider).listCategories(),
+    );
     return cat;
   }
 }
 
 final inventoryItemsProvider =
     AsyncNotifierProvider<InventoryItemsNotifier, List<InventoryItem>>(
-  InventoryItemsNotifier.new,
-);
+      InventoryItemsNotifier.new,
+    );
 
 class InventoryItemsNotifier extends AsyncNotifier<List<InventoryItem>> {
   @override
@@ -82,13 +86,12 @@ class InventoryItemsNotifier extends AsyncNotifier<List<InventoryItem>> {
 
 final customersProvider =
     AsyncNotifierProvider<CustomersNotifier, List<Customer>>(
-  CustomersNotifier.new,
-);
+      CustomersNotifier.new,
+    );
 
 class CustomersNotifier extends AsyncNotifier<List<Customer>> {
   @override
-  Future<List<Customer>> build() =>
-      ref.read(customerRepositoryProvider).list();
+  Future<List<Customer>> build() => ref.read(customerRepositoryProvider).list();
 
   Future<void> refresh() async {
     state = AsyncData(await ref.read(customerRepositoryProvider).list());
@@ -125,7 +128,9 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
     Customer? customer,
   }) async {
     final draft = ref.read(resaleDraftProvider);
-    final sale = await ref.read(saleRepositoryProvider).createSale(
+    final sale = await ref
+        .read(saleRepositoryProvider)
+        .createSale(
           lines: lines,
           customer: customer,
           id: draft?.saleId,
@@ -143,6 +148,15 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
 
   /// Undo a sale: its items go back to stock and the receipt is removed
   /// (one transaction). Totals / turnover no longer count it.
+  /// Cancel of an Edit: put the undone receipt back exactly as it was
+  /// (same number, date, customer, lines) and take its stock again.
+  Future<void> restoreSale(Sale sale) async {
+    await ref.read(saleRepositoryProvider).restoreSale(sale);
+    await ref.read(inventoryItemsProvider.notifier).refresh();
+    await refresh();
+    ref.invalidate(customersProvider);
+  }
+
   Future<void> voidSale(String saleId) async {
     await ref.read(saleRepositoryProvider).voidSale(saleId);
     await ref.read(inventoryItemsProvider.notifier).refresh();
@@ -154,10 +168,9 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
     required String saleId,
     required List<SaleLine> lines,
   }) async {
-    final sale = await ref.read(saleRepositoryProvider).updateSaleLines(
-          saleId: saleId,
-          lines: lines,
-        );
+    final sale = await ref
+        .read(saleRepositoryProvider)
+        .updateSaleLines(saleId: saleId, lines: lines);
     await ref.read(inventoryItemsProvider.notifier).refresh();
     await refresh();
     ref.invalidate(customersProvider);
@@ -174,8 +187,9 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
   Future<List<InventoryItem>> lowStockAfterSale(List<SaleLine> lines) async {
     final low = <InventoryItem>[];
     for (final line in lines) {
-      final item =
-          await ref.read(inventoryRepositoryProvider).getItem(line.itemId);
+      final item = await ref
+          .read(inventoryRepositoryProvider)
+          .getItem(line.itemId);
       if (item != null &&
           item.alertEnabled &&
           item.amount <= item.alertAmount) {
@@ -227,7 +241,10 @@ class InventoryRepository {
     return cat;
   }
 
-  Future<List<InventoryItem>> listItems({String? query, String? categoryId}) async {
+  Future<List<InventoryItem>> listItems({
+    String? query,
+    String? categoryId,
+  }) async {
     final db = await _db.database;
     final where = <String>[];
     final args = <Object?>[];
@@ -239,7 +256,8 @@ class InventoryRepository {
       where.add('i.category_id = ?');
       args.add(categoryId);
     }
-    final sql = '''
+    final sql =
+        '''
       SELECT i.*, c.name AS category_name
       FROM inventory_items i
       LEFT JOIN categories c ON c.id = i.category_id
@@ -252,13 +270,16 @@ class InventoryRepository {
 
   Future<InventoryItem?> getItem(String id) async {
     final db = await _db.database;
-    final rows = await db.rawQuery('''
+    final rows = await db.rawQuery(
+      '''
       SELECT i.*, c.name AS category_name
       FROM inventory_items i
       LEFT JOIN categories c ON c.id = i.category_id
       WHERE i.id = ?
       LIMIT 1
-    ''', [id]);
+    ''',
+      [id],
+    );
     if (rows.isEmpty) return null;
     return InventoryItem.fromMap(rows.first);
   }
@@ -298,8 +319,12 @@ class CustomerRepository {
 
   Future<Customer?> get(String id) async {
     final db = await _db.database;
-    final rows =
-        await db.query('customers', where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await db.query(
+      'customers',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     return Customer.fromMap(rows.first);
   }
@@ -326,13 +351,16 @@ class CustomerRepository {
       );
     }
     // Re-link sales orphaned by older REPLACE upserts (same display name).
-    await db.rawUpdate('''
+    await db.rawUpdate(
+      '''
       UPDATE sales
       SET customer_id = ?
       WHERE customer_id IS NULL
         AND customer_name = ?
         AND customer_name != 'Guest'
-    ''', [customer.id, customer.displayName]);
+    ''',
+      [customer.id, customer.displayName],
+    );
   }
 
   Future<void> delete(String id) async {
@@ -342,11 +370,14 @@ class CustomerRepository {
 
   Future<CustomerStats> stats(String customerId) async {
     final db = await _db.database;
-    final rows = await db.rawQuery('''
+    final rows = await db.rawQuery(
+      '''
       SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s,
              MAX(created_at) AS l
       FROM sales WHERE customer_id = ?
-    ''', [customerId]);
+    ''',
+      [customerId],
+    );
     final last = rows.first['l'] as String?;
     return CustomerStats(
       purchaseCount: (rows.first['c'] as int?) ?? 0,
@@ -362,8 +393,12 @@ class SaleRepository {
 
   Future<Sale?> get(String id) async {
     final db = await _db.database;
-    final rows =
-        await db.query('sales', where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await db.query(
+      'sales',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     final row = rows.first;
     final lines = await db.query(
@@ -447,8 +482,9 @@ class SaleRepository {
     final saleDate = createdAt ?? now;
     final total = lines.fold<double>(0, (sum, l) => sum + l.lineTotal);
     // Never persist guest sentinel as a real customer id.
-    final customerId =
-        (customer == null || customer.id == '__guest__') ? null : customer.id;
+    final customerId = (customer == null || customer.id == '__guest__')
+        ? null
+        : customer.id;
     final customerName = (customer == null || customer.id == '__guest__')
         ? 'Guest'
         : customer.displayName;
@@ -508,6 +544,46 @@ class SaleRepository {
       createdAt: saleDate,
       lines: lines,
     );
+  }
+
+  /// Re-insert a sale removed by [voidSale] exactly as it was and deduct
+  /// its stock again (items deleted since are skipped; stock never goes
+  /// below 0). Already present = no-op.
+  Future<void> restoreSale(Sale sale) async {
+    final db = await _db.database;
+    final now = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      final existing = await txn.query(
+        'sales',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [sale.id],
+        limit: 1,
+      );
+      if (existing.isNotEmpty) return;
+      await txn.insert('sales', {
+        'id': sale.id,
+        'customer_id': sale.customerId,
+        'customer_name': sale.customerName ?? 'Guest',
+        'total': sale.total,
+        'created_at': sale.createdAt.toIso8601String(),
+      });
+      for (final line in sale.lines) {
+        await txn.insert('sale_lines', {
+          'sale_id': sale.id,
+          'item_id': line.itemId,
+          'title': line.title,
+          'unit_price': line.unitPrice,
+          'quantity': line.quantity,
+          'unit': line.unit,
+        });
+        await txn.rawUpdate(
+          'UPDATE inventory_items SET amount = MAX(0, amount - ?), '
+          'updated_at = ? WHERE id = ?',
+          [line.quantity, now, line.itemId],
+        );
+      }
+    });
   }
 
   /// Undo a sale in one transaction: every line's quantity goes back to
@@ -597,9 +673,7 @@ class SaleRepository {
         }
         final stock = (rows.first['amount'] as num).toDouble();
         if (extraSold > 1e-9 && stock + 1e-9 < extraSold) {
-          throw StateError(
-            'Not enough stock for ${titles[itemId] ?? itemId}',
-          );
+          throw StateError('Not enough stock for ${titles[itemId] ?? itemId}');
         }
         await txn.rawUpdate(
           'UPDATE inventory_items SET amount = amount - ?, updated_at = ? '
@@ -608,11 +682,7 @@ class SaleRepository {
         );
       }
 
-      await txn.delete(
-        'sale_lines',
-        where: 'sale_id = ?',
-        whereArgs: [saleId],
-      );
+      await txn.delete('sale_lines', where: 'sale_id = ?', whereArgs: [saleId]);
 
       var total = 0.0;
       for (final line in lines) {
@@ -715,23 +785,19 @@ class DataRepository {
       await txn.delete('inventory_items');
       await txn.delete('categories');
       await txn.delete('customers');
-      await txn.update(
-        'shop_settings',
-        {
-          'company_name': '',
-          'cashier': '',
-          'manager': '',
-          'street': '',
-          'zip': '',
-          'city': '',
-          'phone': '',
-          'vat_rate': 0,
-          'currency_symbol': '€',
-          'decimal_separator': ',',
-          'setup_complete': 0,
-        },
-        where: 'id = 1',
-      );
+      await txn.update('shop_settings', {
+        'company_name': '',
+        'cashier': '',
+        'manager': '',
+        'street': '',
+        'zip': '',
+        'city': '',
+        'phone': '',
+        'vat_rate': 0,
+        'currency_symbol': '€',
+        'decimal_separator': ',',
+        'setup_complete': 0,
+      }, where: 'id = 1');
     });
   }
 }

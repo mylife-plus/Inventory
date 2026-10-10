@@ -39,10 +39,10 @@ typedef ProviderReader = T Function<T>(ProviderListenable<T> provider);
 
 /// Guest sentinel for [sellCustomerProvider] (completes as Guest).
 Customer guestSellCustomer(String name) => Customer(
-      id: '__guest__',
-      name: name,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(0),
-    );
+  id: '__guest__',
+  name: name,
+  createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+);
 
 /// Receipt → Edit → Continue: undo the sale (stock back, receipt removed)
 /// and put its items + customer into the Sell cart. The draft is saved
@@ -65,6 +65,18 @@ Future<void> startResale(
   read(editingSaleLinesProvider.notifier).state = null;
   read(cartProvider.notifier).replaceAll(sale.lines);
   await _applyResaleCustomer(read, sale.customerId, guestName);
+}
+
+/// Cancel of an Edit (Sell X / Back): nothing happened — the original
+/// receipt and its stock come back exactly as before Edit, the cart and
+/// the preset customer are cleared.
+Future<void> cancelResale(ProviderReader read) async {
+  final draft = read(resaleDraftProvider);
+  if (draft == null) return;
+  await read(salesProvider.notifier).restoreSale(draft.originalSale);
+  await read(resaleDraftProvider.notifier).clear();
+  read(cartProvider.notifier).clear();
+  read(sellCustomerProvider.notifier).state = null;
 }
 
 /// After the app was closed mid-edit: put the saved items + customer back
@@ -268,10 +280,27 @@ class _SellPageState extends ConsumerState<SellPage> {
   /// While re-doing an undone receipt (Edit → Continue) Cancel / Back only
   /// leave the page: the items and customer stay in the cart (and saved)
   /// until the sale is completed again.
-  void _cancel() {
+  Future<void> _cancel() async {
     if (_busy) return;
     FocusScope.of(context).unfocus();
     if (ref.read(resaleDraftProvider) != null) {
+      // Cancel of an Edit = nothing happened: the receipt and stock are
+      // back as before, the cart is blank.
+      setState(() => _busy = true);
+      try {
+        await cancelResale(ref.read);
+      } catch (e) {
+        if (mounted) {
+          setState(() => _busy = false);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('$e')));
+        }
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _clearEditState();
       if (context.canPop()) {
         context.pop();
       } else {
@@ -300,18 +329,6 @@ class _SellPageState extends ConsumerState<SellPage> {
   void _clearEditState() {
     ref.read(editingSaleIdProvider.notifier).state = null;
     ref.read(editingSaleLinesProvider.notifier).state = null;
-  }
-
-  /// Who the reopened receipt is for (the customer it will complete with).
-  String _resaleCustomerName(S t, ResaleDraft draft) {
-    final preset = ref.watch(sellCustomerProvider);
-    if (preset != null) {
-      return preset.id == '__guest__' ? t('guest') : preset.displayName;
-    }
-    final name = draft.customerName;
-    return (name == null || name.isEmpty || name == 'Guest')
-        ? t('guest')
-        : name;
   }
 
   void _addToCart(InventoryItem item) {
@@ -463,7 +480,7 @@ class _SellPageState extends ConsumerState<SellPage> {
     // stale edit session can never be applied to a later sale. Re-doing an
     // undone receipt: Back keeps the cart (and never leaves the app).
     return PopScope(
-      canPop: !editing && (resale == null || context.canPop()),
+      canPop: !editing && resale == null,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _cancel();
       },
@@ -514,45 +531,6 @@ class _SellPageState extends ConsumerState<SellPage> {
         ),
         body: Column(
           children: [
-            if (resale != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: p.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: p.stroke),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.edit_note_rounded,
-                        size: 20,
-                        color: p.textSecondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          t.tr('resale_hint_customer', {
-                            'n': resale.receiptNumber,
-                            'c': _resaleCustomerName(t, resale),
-                          }),
-                          style: TextStyle(
-                            color: p.textSecondary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Row(
@@ -1731,8 +1709,9 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
 
     if (!widget.checkout) {
       if (customer == null) {
-        ref.read(sellCustomerProvider.notifier).state =
-            guestSellCustomer(ref.read(tProvider)('guest'));
+        ref.read(sellCustomerProvider.notifier).state = guestSellCustomer(
+          ref.read(tProvider)('guest'),
+        );
       } else {
         ref.read(sellCustomerProvider.notifier).state = customer;
       }

@@ -18,9 +18,10 @@ class ResaleDraft {
     required this.saleId,
     required this.createdAt,
     required this.lines,
+    List<SaleLine>? originalLines,
     this.customerId,
     this.customerName,
-  });
+  }) : originalLines = originalLines ?? lines;
 
   /// Original sale id (= receipt number) to re-use.
   final String saleId;
@@ -35,6 +36,9 @@ class ResaleDraft {
   /// Current cart (kept in sync while editing).
   final List<SaleLine> lines;
 
+  /// The receipt's lines exactly as sold — Cancel puts these back.
+  final List<SaleLine> originalLines;
+
   String get receiptNumber =>
       (saleId.length > 8 ? saleId.substring(0, 8) : saleId).toUpperCase();
 
@@ -44,6 +48,17 @@ class ResaleDraft {
     customerId: sale.customerId,
     customerName: sale.customerName,
     lines: List<SaleLine>.from(sale.lines),
+    originalLines: List<SaleLine>.from(sale.lines),
+  );
+
+  /// The receipt as it was before Edit (for Cancel).
+  Sale get originalSale => Sale(
+    id: saleId,
+    customerId: customerId,
+    customerName: customerName,
+    total: originalLines.fold<double>(0, (s, l) => s + l.lineTotal),
+    createdAt: createdAt,
+    lines: originalLines,
   );
 
   ResaleDraft copyWith({List<SaleLine>? lines}) => ResaleDraft(
@@ -52,6 +67,7 @@ class ResaleDraft {
     customerId: customerId,
     customerName: customerName,
     lines: lines ?? this.lines,
+    originalLines: originalLines,
   );
 
   Map<String, Object?> toJson() => {
@@ -59,40 +75,46 @@ class ResaleDraft {
     'createdAt': createdAt.toIso8601String(),
     'customerId': customerId,
     'customerName': customerName,
-    'lines': [
-      for (final l in lines)
-        {
-          'itemId': l.itemId,
-          'title': l.title,
-          'unitPrice': l.unitPrice,
-          'quantity': l.quantity,
-          'unit': l.unit,
-          'photoPath': l.photoPath,
-        },
-    ],
+    'lines': [for (final l in lines) _lineJson(l)],
+    'originalLines': [for (final l in originalLines) _lineJson(l)],
   };
+
+  static Map<String, Object?> _lineJson(SaleLine l) => {
+    'itemId': l.itemId,
+    'title': l.title,
+    'unitPrice': l.unitPrice,
+    'quantity': l.quantity,
+    'unit': l.unit,
+    'photoPath': l.photoPath,
+  };
+
+  static List<SaleLine> _parseLines(Object? raw) => [
+    for (final e in (raw as List? ?? const []))
+      SaleLine(
+        itemId: e['itemId'] as String,
+        title: e['title'] as String,
+        unitPrice: (e['unitPrice'] as num).toDouble(),
+        quantity: (e['quantity'] as num).toDouble(),
+        unit: e['unit'] as String?,
+        photoPath: e['photoPath'] as String?,
+      ),
+  ];
 
   static ResaleDraft? tryParse(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     try {
       final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-      final lines = [
-        for (final e in (m['lines'] as List? ?? const []))
-          SaleLine(
-            itemId: e['itemId'] as String,
-            title: e['title'] as String,
-            unitPrice: (e['unitPrice'] as num).toDouble(),
-            quantity: (e['quantity'] as num).toDouble(),
-            unit: e['unit'] as String?,
-            photoPath: e['photoPath'] as String?,
-          ),
-      ];
+      final lines = _parseLines(m['lines']);
+      final original = m.containsKey('originalLines')
+          ? _parseLines(m['originalLines'])
+          : null;
       return ResaleDraft(
         saleId: m['saleId'] as String,
         createdAt: DateTime.parse(m['createdAt'] as String),
         customerId: m['customerId'] as String?,
         customerName: m['customerName'] as String?,
         lines: lines,
+        originalLines: original,
       );
     } catch (e) {
       debugPrint('Bad resale draft: $e');

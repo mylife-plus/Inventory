@@ -155,7 +155,10 @@ class AppBackupService {
         final photo = row['photo_path'] as String?;
         final normalized = Map<String, Object?>.from(row);
         if (photo != null && photo.isNotEmpty) {
-          normalized['photo_path'] = p.join(LocalImageStore.folder, p.basename(photo));
+          normalized['photo_path'] = p.join(
+            LocalImageStore.folder,
+            p.basename(photo),
+          );
         }
         await txn.insert(
           'inventory_items',
