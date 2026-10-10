@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
-import 'package:inventory_app/core/l10n/s.dart';
 import 'package:inventory_app/core/notifications/in_app_notifications.dart';
 import 'package:inventory_app/core/qr/qr_payload.dart';
 import 'package:inventory_app/core/receipts/receipt_details_gate.dart';
