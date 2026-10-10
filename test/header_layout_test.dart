@@ -8,29 +8,24 @@ import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 
-/// Oct 9 client review: every page title is centered — sub pages (with a
-/// back button and actions) and the tab headers (Inventory, Customers,
-/// Turnover) alike.
+/// Oct 10 client review: sub-page titles are centered; the main tab pages
+/// (Inventory, Customers, Turnover) and the main Sell page stay left-aligned.
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
   for (final dark in [true, false]) {
-    testWidgets('app bar title is centered on screen '
+    testWidgets('sub-page app bar title is centered '
         '(${dark ? 'dark' : 'light'})', (tester) async {
       tester.view.physicalSize = const Size(412 * 3, 915 * 3);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
-      final theme = dark ? AppTheme.dark : AppTheme.light;
       await tester.pumpWidget(
         MaterialApp(
-          theme: theme,
+          theme: dark ? AppTheme.dark : AppTheme.light,
           home: Scaffold(
             appBar: AppBar(
               leading: const BackButton(),
               title: const Text('Edit Item'),
-              actions: [
-                IconButton(onPressed: () {}, icon: const Icon(Icons.edit)),
-              ],
             ),
           ),
         ),
@@ -40,7 +35,8 @@ void main() {
     });
   }
 
-  testWidgets('tab header title is centered on screen', (tester) async {
+  testWidgets('tab header title is left-aligned next to the nav buttons',
+      (tester) async {
     tester.view.physicalSize = const Size(412 * 3, 915 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -65,9 +61,10 @@ void main() {
     );
     await tester.pump();
     final title = tester.getRect(find.text('Inventory'));
-    // Icon (26) + gap (8) + title form one group centered on the screen.
-    final groupLeft = title.left - 8 - 26;
-    final groupCenter = (groupLeft + title.right) / 2;
-    expect(groupCenter, closeTo(412 / 2, 2));
+    // 16 padding + 2×44 nav buttons + 10 between + 10 gap + 26 icon + 8.
+    const expectedLeft = 16 + 44 + 10 + 44 + 10 + 26 + 8;
+    expect(title.left, closeTo(expectedLeft, 1.5));
+    // Clearly left of center on a phone.
+    expect(title.center.dx, lessThan(412 / 2));
   });
 }

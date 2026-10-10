@@ -478,8 +478,11 @@ class _SellPageState extends ConsumerState<SellPage> {
               color: p.textSecondary,
             ),
           ),
-          // Centered like every page title (client, Oct 9).
-          centerTitle: true,
+          // Main Sell page: title left-aligned next to the scanner button
+          // (client, Oct 10 — only main pages are left-aligned).
+          centerTitle: false,
+          leadingWidth: 48,
+          titleSpacing: 4,
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

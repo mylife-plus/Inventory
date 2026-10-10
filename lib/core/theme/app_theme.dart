@@ -198,8 +198,8 @@ class AppTheme {
         foregroundColor: p.textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
-        // Client (Oct 9): every page title is centered — main tabs,
-        // sub-pages, Sell, Add Items and sheets alike.
+        // Client (Oct 10): sub-page titles are centered. Main pages
+        // (tab headers, main Sell) opt out explicitly.
         centerTitle: true,
         iconTheme: IconThemeData(color: p.textSecondary),
         titleTextStyle: text.titleLarge?.copyWith(
