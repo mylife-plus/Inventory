@@ -1679,7 +1679,8 @@ class _CustomFieldRow extends StatelessWidget {
         decoration: InputDecoration(
           labelText: label,
           floatingLabelBehavior: FloatingLabelBehavior.always,
-          contentPadding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+          // Same 56 px height as the phone / email rows above it.
+          contentPadding: const EdgeInsets.fromLTRB(14, 18, 14, 17),
         ),
         child: Text(
           value,
