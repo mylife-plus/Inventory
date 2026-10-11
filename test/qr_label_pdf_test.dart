@@ -446,10 +446,6 @@ void main() {
     final ctx = tester.element(find.byType(SizedBox));
     expect(sharePositionOrigin(ctx).width, greaterThan(0));
   });
-}
-
-int asciiCount(Uint8List bytes, String needle) {
-  return needle.allMatches(String.fromCharCodes(bytes)).length;
 
   test('Oct 11: label cells fill the sheet evenly at every count', () {
     const m = PrintService.labelSheetMargin;
@@ -466,4 +462,10 @@ int asciiCount(Uint8List bytes, String needle) {
       expect(g.labelH, lessThanOrEqualTo(c.h + 0.01), reason: '$n');
     }
   });
+
+}
+
+int asciiCount(Uint8List bytes, String needle) {
+  return needle.allMatches(String.fromCharCodes(bytes)).length;
+
 }
