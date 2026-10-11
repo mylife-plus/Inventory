@@ -276,11 +276,20 @@ class QrSheetPreview extends StatelessWidget {
           builder: (context, box) {
             final scale = box.maxWidth / sheet.width;
             final gap = gapPt * scale;
-            final w = grid.labelW * scale;
-            final h = grid.labelH * scale;
+            final cellSize = PrintService.qrLabelCell(
+              grid,
+              sheet.width - margin * 2,
+              sheet.height - margin * 2,
+              gap: gapPt,
+            );
+            // Same geometry as the printed page: cells fill the sheet so
+            // margins and gaps are even; the label sits centered inside.
+            final w = (single ? grid.labelW : cellSize.w) * scale;
+            final h = (single ? grid.labelH : cellSize.h) * scale;
             Widget cell() => Container(
               width: w,
               height: h,
+              alignment: Alignment.center,
               decoration: single
                   ? null
                   : BoxDecoration(
@@ -291,11 +300,15 @@ class QrSheetPreview extends StatelessWidget {
                     ),
               child: image == null
                   ? null
-                  : Image(
-                      image: image!,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.medium,
-                      gaplessPlayback: true,
+                  : SizedBox(
+                      width: grid.labelW * scale,
+                      height: grid.labelH * scale,
+                      child: Image(
+                        image: image!,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
+                        gaplessPlayback: true,
+                      ),
                     ),
             );
             final rows = <Widget>[];

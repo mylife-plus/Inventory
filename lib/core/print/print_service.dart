@@ -336,6 +336,20 @@ class PrintService {
     return best;
   }
 
+  /// Cell size on the sheet: the grid fills the whole printable area so
+  /// the outer margins and the gaps between cut lines are even at every
+  /// count (client, Oct 11). The label itself ([qrLabelGrid] labelW/H) is
+  /// centered in its cell.
+  static ({double w, double h}) qrLabelCell(
+    ({int cols, int rows, double labelW, double labelH}) grid,
+    double width,
+    double height, {
+    double gap = labelSheetGap,
+  }) => (
+    w: (width - gap * (grid.cols - 1)) / grid.cols,
+    h: (height - gap * (grid.rows - 1)) / grid.rows,
+  );
+
   static final Map<String, Uint8List> _sheetCache = {};
 
   /// The print page for [count] labels of [png] on [format], cached so the
@@ -402,15 +416,26 @@ class PrintService {
       pageFormat.height - margin * 2,
       gap: gap,
     );
+    final cellSize = qrLabelCell(
+      grid,
+      pageFormat.width - margin * 2,
+      pageFormat.height - margin * 2,
+      gap: gap,
+    );
     final image = pw.MemoryImage(png);
     pw.Widget cell() => pw.Container(
-      width: grid.labelW,
-      height: grid.labelH,
+      width: cellSize.w,
+      height: cellSize.h,
+      alignment: pw.Alignment.center,
       decoration: pw.BoxDecoration(
         color: PdfColors.white,
         border: pw.Border.all(color: PdfColors.grey400, width: 0.4),
       ),
-      child: pw.Image(image, fit: pw.BoxFit.contain),
+      child: pw.SizedBox(
+        width: grid.labelW,
+        height: grid.labelH,
+        child: pw.Image(image, fit: pw.BoxFit.contain),
+      ),
     );
     final rows = <pw.Widget>[];
     var placed = 0;

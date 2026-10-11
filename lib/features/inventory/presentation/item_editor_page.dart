@@ -247,6 +247,17 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
     if (mounted) context.pop();
   }
 
+  void _setAlert(bool v) => setState(() {
+    _alertEnabled = v;
+    // Activating starts at 1 unless a level is already set.
+    final current = double.tryParse(
+      _alertAmount.text.replaceAll(',', '.').trim(),
+    );
+    if (v && (current == null || current <= 0)) {
+      _alertAmount.text = '1';
+    }
+  });
+
   @override
   Widget build(BuildContext context) {
     final t = ref.watch(tProvider);
@@ -506,30 +517,69 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
             AppCard(
               child: Column(
                 children: [
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      t('quantity_alert'),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                  // Client (Oct 11): same build as the QR Label row below
+                  // (40 px icon tile, title + subtitle) so both rows have the
+                  // same height; the card's padding keeps top = bottom.
+                  InkWell(
+                    onTap: () => _setAlert(!_alertEnabled),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: p.neon.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.notifications_active_rounded,
+                            color: p.neon,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                t('quantity_alert'),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                  color: p.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                t('notify_below_level'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: p.textMuted,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 28,
+                          child: FittedBox(
+                            child: Switch.adaptive(
+                              value: _alertEnabled,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onChanged: _setAlert,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    subtitle: Text(
-                      t('notify_below_level'),
-                      style: TextStyle(fontSize: 12.5, color: p.textMuted),
-                    ),
-                    value: _alertEnabled,
-                    onChanged: (v) => setState(() {
-                      _alertEnabled = v;
-                      // Activating starts at 1 unless a level is already set.
-                      final current = double.tryParse(
-                        _alertAmount.text.replaceAll(',', '.').trim(),
-                      );
-                      if (v && (current == null || current <= 0)) {
-                        _alertAmount.text = '1';
-                      }
-                    }),
-                    secondary: Icon(Icons.notifications_active_rounded,
-                        color: p.neon),
                   ),
+                  if (_alertEnabled) const SizedBox(height: 14),
                   if (_alertEnabled)
                     // Rebuild only the field when the unit changes so the
                     // suffix always shows the item's current unit.
@@ -540,6 +590,7 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
                         return TextFormField(
                           controller: _alertAmount,
                           decoration: InputDecoration(
+                            isDense: true,
                             labelText: t('amount'),
                             suffixText: unit.isEmpty ? null : unit,
                             suffixStyle: TextStyle(

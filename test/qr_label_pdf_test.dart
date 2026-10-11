@@ -450,4 +450,20 @@ void main() {
 
 int asciiCount(Uint8List bytes, String needle) {
   return needle.allMatches(String.fromCharCodes(bytes)).length;
+
+  test('Oct 11: label cells fill the sheet evenly at every count', () {
+    const m = PrintService.labelSheetMargin;
+    const gap = PrintService.labelSheetGap;
+    final w = PdfPageFormat.a4.width - 2 * m;
+    final h = PdfPageFormat.a4.height - 2 * m;
+    for (final n in PrintService.qrLabelsPerPageOptions.where((n) => n > 1)) {
+      final g = PrintService.qrLabelGrid(n, w, h, gap: gap);
+      final c = PrintService.qrLabelCell(g, w, h, gap: gap);
+      expect(g.cols * g.rows, n, reason: 'full grid for $n');
+      expect(c.w * g.cols + gap * (g.cols - 1), closeTo(w, 0.01));
+      expect(c.h * g.rows + gap * (g.rows - 1), closeTo(h, 0.01));
+      expect(g.labelW, lessThanOrEqualTo(c.w + 0.01), reason: '$n');
+      expect(g.labelH, lessThanOrEqualTo(c.h + 0.01), reason: '$n');
+    }
+  });
 }
