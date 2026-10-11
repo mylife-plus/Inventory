@@ -1302,16 +1302,43 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
   DateTime? _lastScanAt;
   final List<InventoryItem> _pending = [];
 
+  Future<void>? _stopping;
+
+  /// Release the camera for sure. mobile_scanner's stop() is a no-op while
+  /// the camera is still starting (slow first open, permission prompt), and
+  /// the start then completes after the page is gone, leaving the camera on.
+  /// So wait for a pending start to finish, then stop and dispose.
+  Future<void> _releaseCamera() => _stopping ??= _stopCamera();
+
+  Future<void> _stopCamera() async {
+    final scanner = _scanner;
+    if (scanner.value.isStarting) {
+      final done = Completer<void>();
+      void check() {
+        if (!scanner.value.isStarting && !done.isCompleted) done.complete();
+      }
+
+      scanner.addListener(check);
+      await done.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {},
+      );
+      scanner.removeListener(check);
+    }
+    try {
+      await scanner.stop();
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
-    // Release the camera for sure (closing right after the camera started,
-    // e.g. just after the permission prompt, could leave it open).
     final scanner = _scanner;
     unawaited(
-      scanner
-          .stop()
-          .catchError((Object _) {})
-          .whenComplete(() => scanner.dispose()),
+      _releaseCamera().whenComplete(() async {
+        try {
+          await scanner.dispose();
+        } catch (_) {}
+      }),
     );
     super.dispose();
   }
@@ -1394,12 +1421,12 @@ class _SellScannerPageState extends ConsumerState<SellScannerPage> {
 
   void _done() {
     final items = List<InventoryItem>.from(_pending);
-    unawaited(_scanner.stop().catchError((Object _) {}));
+    unawaited(_releaseCamera());
     context.pop(items);
   }
 
   void _cancel() {
-    unawaited(_scanner.stop().catchError((Object _) {}));
+    unawaited(_releaseCamera());
     context.pop();
   }
 
