@@ -320,17 +320,45 @@ void main() {
   });
 
   group('Cancel of the edit', () {
+    late _Db db;
+    late String saleId;
+
+    /// Everything exactly as before Edit: receipt back with the same
+    /// number / lines / customer / date, stock deducted once, cart blank.
+    void expectRestored(ProviderContainer c) {
+      expect(db.stock, {'a': 2.0, 'b': 4.0});
+      expect(db.sales.keys, [saleId]);
+      final sale = db.sales[saleId]!;
+      expect(sale.lines, _lines);
+      expect(sale.customerId, _alice.id);
+      expect(c.read(salesProvider).value?.length, 1);
+      expect(c.read(cartProvider), isEmpty);
+      expect(c.read(sellCustomerProvider), isNull);
+      expect(c.read(resaleDraftProvider), isNull);
+    }
+
+    Future<void> settle(WidgetTester tester) async {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+    }
+
     Future<(ProviderContainer, GoRouter)> openSell(WidgetTester tester) async {
       tester.view.physicalSize = const Size(412 * 3, 915 * 3);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
-      final db = _Db();
+      db = _Db();
       final c = _container(db);
       late Sale sale;
       await tester.runAsync(() async {
         sale = await _sold(c, customer: _alice);
         await startResale(c.read, sale, guestName: 'Guest');
       });
+      saleId = sale.id;
+      // Edit undid the sale: stock back, receipt gone.
+      expect(db.stock, {'a': 4.0, 'b': 5.0});
+      expect(db.sales, isEmpty);
       final router = GoRouter(
         initialLocation: '/sold',
         routes: [
@@ -343,8 +371,13 @@ void main() {
             path: '/sell/add',
             builder: (_, _) => const SellAddProductsPage(),
           ),
+          GoRoute(
+            path: '/customers',
+            builder: (_, _) => const Scaffold(body: Text('customers tab')),
+          ),
         ],
       );
+      addTearDown(attachResaleGuard(router, c.read));
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: c,
@@ -397,5 +430,114 @@ void main() {
       expect(find.byType(SellPage), findsOneWidget);
       expect(c.read(cartProvider), _lines);
     });
+
+    // Oct 11: every way of leaving the edit without completing it.
+    testWidgets('Path: Sell X → stock + receipt restored', (tester) async {
+      final (c, _) = await openSell(tester);
+      await tester.tap(find.byIcon(Icons.close_rounded).last);
+      await settle(tester);
+      expectRestored(c);
+    });
+
+    testWidgets('Path: system back / back gesture', (tester) async {
+      final (c, _) = await openSell(tester);
+      await tester.binding.handlePopRoute();
+      await settle(tester);
+      expectRestored(c);
+    });
+
+    testWidgets('Path: switch to another bottom tab', (tester) async {
+      final (c, router) = await openSell(tester);
+      router.go('/customers');
+      await settle(tester);
+      expect(find.text('customers tab'), findsOneWidget);
+      expectRestored(c);
+    });
+
+    testWidgets('Path: Add Items → tab switch from there', (tester) async {
+      final (c, router) = await openSell(tester);
+      router.push('/sell/add');
+      await tester.pumpAndSettle();
+      // Still inside the edit: nothing restored yet.
+      expect(db.sales, isEmpty);
+      router.go('/customers');
+      await settle(tester);
+      expectRestored(c);
+    });
+
+    testWidgets('Path: Add Items X, then Sell X', (tester) async {
+      final (c, router) = await openSell(tester);
+      router.push('/sell/add');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.close_rounded).last);
+      await tester.pumpAndSettle();
+      expect(db.sales, isEmpty);
+      await tester.tap(find.byIcon(Icons.close_rounded).last);
+      await settle(tester);
+      expectRestored(c);
+    });
+
+    testWidgets('Path: trash an item, then cancel', (tester) async {
+      final (c, _) = await openSell(tester);
+      c.read(cartProvider.notifier).removeItem('a');
+      c.read(cartProvider.notifier).removeItem('b');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.close_rounded).last);
+      await settle(tester);
+      expectRestored(c);
+    });
+
+    testWidgets('Path: change quantity, then cancel', (tester) async {
+      final (c, _) = await openSell(tester);
+      final line = c.read(cartProvider).first;
+      c.read(cartProvider.notifier).replaceAll([
+        line.copyWith(quantity: 3),
+        ...c.read(cartProvider).skip(1),
+      ]);
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await settle(tester);
+      expectRestored(c);
+    });
+
+    testWidgets('Path: Sell X twice / X + Back together', (tester) async {
+      final (c, _) = await openSell(tester);
+      await tester.tap(find.byIcon(Icons.close_rounded).last);
+      await tester.binding.handlePopRoute();
+      await settle(tester);
+      // Restored once only: stock not deducted twice.
+      expectRestored(c);
+    });
+  });
+
+  test('Path: app killed mid-edit → restored on next launch', () async {
+    final db = _Db();
+    final first = _container(db);
+    final sale = await _sold(first, customer: _alice);
+    await startResale(first.read, sale, guestName: 'Guest');
+    await first.read(resaleDraftProvider.notifier).loaded;
+    expect(db.sales, isEmpty);
+    expect(db.stock, {'a': 4.0, 'b': 5.0});
+
+    // New process: same disk (prefs + db), fresh providers.
+    final second = _container(db);
+    await second.read(salesProvider.future);
+    await restoreAbandonedResale(second.read);
+    expect(db.sales.keys, [sale.id]);
+    expect(db.sales[sale.id]!.lines, _lines);
+    expect(db.sales[sale.id]!.createdAt, sale.createdAt);
+    expect(db.stock, {'a': 2.0, 'b': 4.0});
+    expect(second.read(resaleDraftProvider), isNull);
+    expect(second.read(cartProvider), isEmpty);
+  });
+
+  test('A draft from this run is not treated as abandoned', () async {
+    final db = _Db();
+    final c = _container(db);
+    final sale = await _sold(c, customer: _alice);
+    await startResale(c.read, sale, guestName: 'Guest');
+    await restoreAbandonedResale(c.read);
+    expect(db.sales, isEmpty);
+    expect(c.read(resaleDraftProvider), isNotNull);
   });
 }

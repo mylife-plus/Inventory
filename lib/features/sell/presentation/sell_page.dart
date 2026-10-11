@@ -71,13 +71,78 @@ Future<void> startResale(
 /// Cancel of an Edit (Sell X / Back): nothing happened — the original
 /// receipt and its stock come back exactly as before Edit, the cart and
 /// the preset customer are cleared.
-Future<void> cancelResale(ProviderReader read) async {
+Future<void> cancelResale(ProviderReader read) {
+  // One restore at a time (Sell X, Back and the route guard can all fire
+  // for the same exit).
+  return _cancelling ??= _cancelResale(read).whenComplete(() {
+    _cancelling = null;
+  });
+}
+
+Future<void>? _cancelling;
+
+Future<void> _cancelResale(ProviderReader read) async {
   final draft = read(resaleDraftProvider);
   if (draft == null) return;
   await read(salesProvider.notifier).restoreSale(draft.originalSale);
   await read(resaleDraftProvider.notifier).clear();
   read(cartProvider.notifier).clear();
   read(sellCustomerProvider.notifier).state = null;
+  read(editingSaleIdProvider.notifier).state = null;
+  read(editingSaleLinesProvider.notifier).state = null;
+}
+
+/// Routes that belong to an edit in progress (Sell + its sub pages). Being
+/// anywhere else with an undone receipt means the edit was left without
+/// completing it.
+bool isSellFlowLocation(String path) =>
+    path == '/sell' ||
+    path == '/sell/add' ||
+    path == '/sell/scan' ||
+    path == '/sell/customer' ||
+    // Checkout steps opened from Sell: new customer, receipt details.
+    path == '/customers/new' ||
+    path == '/settings/receipt';
+
+/// Safety net for Receipt Edit: an undone receipt is only kept while the
+/// user is on Sell (or a checkout step). Navigating anywhere else — tab
+/// switch, deep back, any route — restores the original receipt and stock
+/// exactly as before Edit and clears the cart. Returns the detach callback.
+VoidCallback attachResaleGuard(GoRouter router, ProviderReader read) {
+  // The page on top (pushed pages included).
+  String top() {
+    try {
+      return router.state.uri.path;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  var lastPath = top();
+  void guard() {
+    final path = top();
+    final prev = lastPath;
+    lastPath = path;
+    // First page shown (app start) is not a navigation away from Sell.
+    final changed = prev.isNotEmpty && path != prev;
+    // Only on a real navigation (not a refresh of the same page — e.g. the
+    // receipt page where Edit → Continue starts the edit).
+    if (!changed || read(resaleDraftProvider) == null) return;
+    if (path.isEmpty || path == '/splash' || isSellFlowLocation(path)) return;
+    unawaited(cancelResale(read));
+  }
+
+  router.routerDelegate.addListener(guard);
+  return () => router.routerDelegate.removeListener(guard);
+}
+
+/// App closed / killed in the middle of an edit: that edit was never
+/// completed, so on the next launch the original receipt and stock come
+/// back (instead of the items silently waiting in the cart).
+Future<void> restoreAbandonedResale(ProviderReader read) async {
+  final drafts = read(resaleDraftProvider.notifier);
+  await drafts.loaded;
+  if (drafts.loadedFromDisk) await cancelResale(read);
 }
 
 /// After the app was closed mid-edit: put the saved items + customer back
@@ -496,11 +561,10 @@ class _SellPageState extends ConsumerState<SellPage> {
               color: p.textSecondary,
             ),
           ),
-          // Main Sell page: title left-aligned next to the scanner button
-          // (client, Oct 10 — only main pages are left-aligned).
-          centerTitle: false,
-          leadingWidth: 48,
-          titleSpacing: 4,
+          // Client (Oct 11): Sell Items title is centered like the
+        // sub pages; only the Inventory / Customers / Turnover tabs are
+        // left-aligned.
+        centerTitle: true,
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

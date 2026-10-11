@@ -21,15 +21,6 @@ class InventoryApp extends ConsumerWidget {
     // Receipt Edit → Continue (undone sale being re-done): a draft saved
     // before the app was closed refills the empty cart + customer, and cart
     // changes are saved so they survive leaving / killing the app.
-    ref.listen<ResaleDraft?>(resaleDraftProvider, (prev, next) {
-      if (prev == null && next != null && ref.read(cartProvider).isEmpty) {
-        restoreResaleIntoCart(
-          ref.read,
-          next,
-          guestName: S(prefs.localeCode)('guest'),
-        );
-      }
-    });
     ref.listen(cartProvider, (_, next) {
       if (next.isNotEmpty) {
         ref.read(resaleDraftProvider.notifier).updateLines(next);

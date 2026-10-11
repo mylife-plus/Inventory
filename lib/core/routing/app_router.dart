@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -28,7 +29,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.listen(appPrefsProvider, (_, _) => bump(), fireImmediately: true);
   ref.onDispose(gate.dispose);
 
-  return GoRouter(
+  final router = GoRouter(
     navigatorKey: _rootKey,
     initialLocation: '/splash',
     refreshListenable: gate,
@@ -49,8 +50,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Splash animates, then navigates itself.
       if (atSplash) return null;
 
-      final prefsDone =
-          prefsAsync.valueOrNull?.prefsSetupDone ?? false;
+      final prefsDone = prefsAsync.valueOrNull?.prefsSetupDone ?? false;
 
       // Prefs (language / currency) — once only.
       if (!prefsDone && loc != '/setup') return '/setup';
@@ -61,18 +61,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/splash',
-        builder: (_, _) => const SplashPage(),
-      ),
-      GoRoute(
-        path: '/setup',
-        builder: (_, _) => const PrefsSetupPage(),
-      ),
-      GoRoute(
-        path: '/onboarding',
-        builder: (_, _) => const OnboardingPage(),
-      ),
+      GoRoute(path: '/splash', builder: (_, _) => const SplashPage()),
+      GoRoute(path: '/setup', builder: (_, _) => const PrefsSetupPage()),
+      GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingPage()),
       StatefulShellRoute.indexedStack(
         builder: (_, _, shell) => MainShell(navigationShell: shell),
         branches: [
@@ -113,8 +104,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/inventory/qr/:id',
-        builder: (_, state) =>
-            QrLabelPage(itemId: state.pathParameters['id']!),
+        builder: (_, state) => QrLabelPage(itemId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/inventory/qr/:id/print',
@@ -127,18 +117,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           return QrPrintPreviewPage(args: args);
         },
       ),
-      GoRoute(
-        path: '/sell',
-        builder: (_, _) => const SellPage(),
-      ),
+      GoRoute(path: '/sell', builder: (_, _) => const SellPage()),
       GoRoute(
         path: '/sell/add',
         builder: (_, _) => const SellAddProductsPage(),
       ),
-      GoRoute(
-        path: '/sell/scan',
-        builder: (_, _) => const SellScannerPage(),
-      ),
+      GoRoute(path: '/sell/scan', builder: (_, _) => const SellScannerPage()),
       GoRoute(
         path: '/sell/customer',
         builder: (_, state) => SelectCustomerPage(
@@ -148,8 +132,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/sell/receipt/:id',
-        builder: (_, state) =>
-            ReceiptPage(saleId: state.pathParameters['id']!),
+        builder: (_, state) => ReceiptPage(saleId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/customers/new',
@@ -165,25 +148,26 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) =>
             CustomerDetailPage(customerId: state.pathParameters['id']!),
       ),
-      GoRoute(
-        path: '/receipts',
-        builder: (_, _) => const ReceiptsYearsPage(),
-      ),
+      GoRoute(path: '/receipts', builder: (_, _) => const ReceiptsYearsPage()),
       GoRoute(
         path: '/receipts/year/:year',
         builder: (_, state) => ReceiptsYearPage(
-          year: int.tryParse(state.pathParameters['year'] ?? '') ??
+          year:
+              int.tryParse(state.pathParameters['year'] ?? '') ??
               DateTime.now().year,
         ),
       ),
-      GoRoute(
-        path: '/settings',
-        builder: (_, _) => const SettingsPage(),
-      ),
+      GoRoute(path: '/settings', builder: (_, _) => const SettingsPage()),
       GoRoute(
         path: '/settings/receipt',
         builder: (_, _) => const ReceiptDetailsSettingsPage(),
       ),
     ],
   );
+
+  // Receipt Edit: leaving Sell without completing (any route) or an app
+  // kill mid-edit restores the original receipt and stock.
+  ref.onDispose(attachResaleGuard(router, ref.read));
+  unawaited(restoreAbandonedResale(ref.read));
+  return router;
 });

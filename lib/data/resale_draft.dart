@@ -137,6 +137,10 @@ class ResaleDraftNotifier extends StateNotifier<ResaleDraft?> {
 
   late final Future<void> _loaded;
 
+  /// True when the current draft was left over from a previous app run
+  /// (the app was closed / killed in the middle of an edit).
+  bool loadedFromDisk = false;
+
   /// Completes once a draft saved before the app was closed is loaded.
   Future<void> get loaded => _loaded;
 
@@ -145,7 +149,10 @@ class ResaleDraftNotifier extends StateNotifier<ResaleDraft?> {
       final prefs = await SharedPreferences.getInstance();
       final draft = ResaleDraft.tryParse(prefs.getString(prefKey));
       // Don't overwrite a draft started meanwhile.
-      if (mounted && state == null && draft != null) state = draft;
+      if (mounted && state == null && draft != null) {
+        state = draft;
+        loadedFromDisk = true;
+      }
     } catch (e) {
       debugPrint('Loading resale draft failed: $e');
     }
@@ -166,6 +173,7 @@ class ResaleDraftNotifier extends StateNotifier<ResaleDraft?> {
 
   Future<void> clear() async {
     state = null;
+    loadedFromDisk = false;
     await _save();
   }
 
