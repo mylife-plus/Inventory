@@ -174,7 +174,8 @@ class _QrPrintPreviewPageState extends ConsumerState<QrPrintPreviewPage> {
       body: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          // Client (Oct 13): compact — less padding / spacing, same order.
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -216,15 +217,19 @@ class _QrPrintPreviewPageState extends ConsumerState<QrPrintPreviewPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: Center(
+              const SizedBox(height: 10),
+              // The sheet sits right under the description and the button
+              // right under the sheet (no empty band above / below it).
+              Flexible(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  heightFactor: 1,
                   child: RepaintBoundary(
                     child: QrSheetPreview(count: _perPage, image: _image),
                   ),
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               AccentButton(
                 label: t('print_label'),
                 icon: (_busy || _png == null)

@@ -276,7 +276,7 @@ void main() {
   });
 
   test(
-    'Cancel after changing the cart puts the receipt back as it was',
+    'Oct 13: Cancel after changing the cart returns all items, receipt stays deleted',
     () async {
       final db = _Db();
       final c = _container(db);
@@ -289,11 +289,12 @@ void main() {
 
       await cancelResale(c.read);
 
-      expect(db.stock, before);
-      expect(db.sales.keys, [sale.id]);
-      expect(db.sales[sale.id]!.lines, _lines);
-      expect(db.sales[sale.id]!.customerId, 'c1');
-      expect(db.sales[sale.id]!.createdAt, sale.createdAt);
+      // Every item of the deleted receipt is back in inventory.
+      expect(db.stock, {
+        'a': before['a']! + 2,
+        'b': before['b']! + 1,
+      });
+      expect(db.sales, isEmpty);
       expect(c.read(cartProvider), isEmpty);
       expect(c.read(sellCustomerProvider), isNull);
       expect(c.read(resaleDraftProvider), isNull);
@@ -302,7 +303,7 @@ void main() {
     },
   );
 
-  test('Cancel after an app kill still restores the original lines', () async {
+  test('Oct 13: app kill mid-edit returns the items, receipt stays deleted', () async {
     final db = _Db();
     final c = _container(db);
     final sale = await _sold(c, customer: _alice);
@@ -315,23 +316,21 @@ void main() {
     await c2.read(resaleDraftProvider.notifier).loaded;
     await c2.read(salesProvider.future);
     await cancelResale(c2.read);
-    expect(db.sales[sale.id]!.lines, _lines);
-    expect(db.stock, {'a': 2, 'b': 4});
+    expect(db.sales, isEmpty);
+    expect(db.stock, {'a': 4, 'b': 5});
   });
 
   group('Cancel of the edit', () {
     late _Db db;
     late String saleId;
 
-    /// Everything exactly as before Edit: receipt back with the same
-    /// number / lines / customer / date, stock deducted once, cart blank.
+    /// Oct 13 spec: the receipt stays deleted (no receipt, no turnover),
+    /// every cart item is back in inventory, cart blank.
     void expectRestored(ProviderContainer c) {
-      expect(db.stock, {'a': 2.0, 'b': 4.0});
-      expect(db.sales.keys, [saleId]);
-      final sale = db.sales[saleId]!;
-      expect(sale.lines, _lines);
-      expect(sale.customerId, _alice.id);
-      expect(c.read(salesProvider).value?.length, 1);
+      expect(db.stock, {'a': 4.0, 'b': 5.0});
+      expect(db.sales.containsKey(saleId), isFalse);
+      expect(db.sales, isEmpty);
+      expect(c.read(salesProvider).value ?? const [], isEmpty);
       expect(c.read(cartProvider), isEmpty);
       expect(c.read(sellCustomerProvider), isNull);
       expect(c.read(resaleDraftProvider), isNull);
@@ -392,7 +391,7 @@ void main() {
       return (c, router);
     }
 
-    testWidgets('Sell X restores the receipt, cart blank', (tester) async {
+    testWidgets('Sell X: receipt stays deleted, cart blank', (tester) async {
       final (c, _) = await openSell(tester);
       await tester.tap(find.byIcon(Icons.close_rounded).last);
       await tester.runAsync(
@@ -403,7 +402,7 @@ void main() {
       expect(c.read(cartProvider), isEmpty);
       expect(c.read(sellCustomerProvider), isNull);
       expect(c.read(resaleDraftProvider), isNull);
-      expect(c.read(salesProvider).value?.length, 1);
+      expect(c.read(salesProvider).value ?? const [], isEmpty);
     });
 
     testWidgets('System Back = Cancel too', (tester) async {
@@ -523,10 +522,9 @@ void main() {
     final second = _container(db);
     await second.read(salesProvider.future);
     await restoreAbandonedResale(second.read);
-    expect(db.sales.keys, [sale.id]);
-    expect(db.sales[sale.id]!.lines, _lines);
-    expect(db.sales[sale.id]!.createdAt, sale.createdAt);
-    expect(db.stock, {'a': 2.0, 'b': 4.0});
+    // Oct 13: receipt stays deleted, items back in inventory.
+    expect(db.sales, isEmpty);
+    expect(db.stock, {'a': 4.0, 'b': 5.0});
     expect(second.read(resaleDraftProvider), isNull);
     expect(second.read(cartProvider), isEmpty);
   });

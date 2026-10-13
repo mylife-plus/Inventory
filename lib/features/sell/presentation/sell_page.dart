@@ -84,8 +84,12 @@ Future<void>? _cancelling;
 Future<void> _cancelResale(ProviderReader read) async {
   final draft = read(resaleDraftProvider);
   if (draft == null) return;
-  await read(salesProvider.notifier).restoreSale(draft.originalSale);
+  // Client (Oct 13): Edit → Continue deleted the receipt for good (receipt
+  // and turnover gone, its items moved to the cart). Leaving without
+  // completing returns the cart items to inventory — they were only
+  // reserved by the cart, never deducted — and the receipt stays deleted.
   await read(resaleDraftProvider.notifier).clear();
+  await read(inventoryItemsProvider.notifier).refresh();
   read(cartProvider.notifier).clear();
   read(sellCustomerProvider.notifier).state = null;
   read(editingSaleIdProvider.notifier).state = null;
