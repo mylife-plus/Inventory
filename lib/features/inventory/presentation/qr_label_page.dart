@@ -224,7 +224,7 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     await ref.read(inventoryItemsProvider.notifier).upsert(updated);
   }
 
-  /// Print → full-screen print preview (labels per page + Print there,
+  /// Print → print preview pop-up (labels per page + Print there,
   /// which opens the system print window). The label PDF keeps warming in
   /// the background, so the preview's Print is instant.
   Future<void> _print() async {
@@ -232,9 +232,9 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     try {
       unawaited(_persist());
       FocusScope.of(context).unfocus();
-      await context.push(
-        '/inventory/qr/${widget.itemId}/print',
-        extra: QrPrintArgs(
+      await QrPrintPreviewPage.show(
+        context,
+        QrPrintArgs(
           title: _labelTitle,
           subtitle: _labelSubtitle,
           qrData: _qrData,

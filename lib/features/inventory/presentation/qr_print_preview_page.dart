@@ -3,11 +3,11 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/print/print_service.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
+import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:pdf/pdf.dart';
 
@@ -33,6 +33,14 @@ class QrPrintArgs {
 /// print window.
 class QrPrintPreviewPage extends ConsumerStatefulWidget {
   const QrPrintPreviewPage({super.key, required this.args});
+
+  /// Opens the print preview as a modal bottom sheet (Android and iOS).
+  static Future<void> show(BuildContext context, QrPrintArgs args) =>
+      showAppSheet<void>(
+        context: context,
+        heightFactor: 0.92,
+        builder: (_) => QrPrintPreviewPage(args: args),
+      );
 
   final QrPrintArgs args;
 
@@ -161,84 +169,97 @@ class _QrPrintPreviewPageState extends ConsumerState<QrPrintPreviewPage> {
     final caption = _perPage > 1
         ? t('labels_on_a4').replaceAll('{n}', '$_perPage')
         : t('one_label_page');
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(t('print_preview_title')),
-        // Client (Oct 10): an obvious way out — X at the top left.
-        leading: IconButton(
-          tooltip: t('close'),
-          icon: const Icon(Icons.close_rounded, size: 26),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: SafeArea(
-        top: false,
-        child: Padding(
-          // Client (Oct 13): compact — less padding / spacing, same order.
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          t('labels_per_page'),
-                          style: TextStyle(
-                            color: p.textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          caption,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: p.textSecondary,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  QrPerPagePicker(
-                    value: _perPage,
-                    label: t('per_page'),
-                    menuTitle: t('labels_per_page'),
-                    enabled: !_busy,
-                    onChanged: _setPerPage,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // The sheet sits right under the description and the button
-              // right under the sheet (no empty band above / below it).
-              Flexible(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  heightFactor: 1,
-                  child: RepaintBoundary(
-                    child: QrSheetPreview(count: _perPage, image: _image),
-                  ),
+    // Client (Oct 13b): a pop-up from the bottom (drag handle, rounded top
+    // corners, no X). Dismiss: swipe down, tap outside, Back.
+    return SafeArea(
+      top: false,
+      child: Padding(
+        // Client (Oct 13): compact — less padding / spacing, same order.
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: p.textMuted.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(height: 12),
-              AccentButton(
-                label: t('print_label'),
-                icon: (_busy || _png == null)
-                    ? Icons.hourglass_top_rounded
-                    : Icons.print_rounded,
-                onPressed: _busy ? null : _print,
+            ),
+            Text(
+              t('print_preview_title'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: p.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t('labels_per_page'),
+                        style: TextStyle(
+                          color: p.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        caption,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.textSecondary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                QrPerPagePicker(
+                  value: _perPage,
+                  label: t('per_page'),
+                  menuTitle: t('labels_per_page'),
+                  enabled: !_busy,
+                  onChanged: _setPerPage,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // The sheet sits right under the description and the button
+            // right under the sheet (no empty band above / below it).
+            Flexible(
+              child: Align(
+                alignment: Alignment.topCenter,
+                heightFactor: 1,
+                child: RepaintBoundary(
+                  child: QrSheetPreview(count: _perPage, image: _image),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            AccentButton(
+              label: t('print_label'),
+              icon: (_busy || _png == null)
+                  ? Icons.hourglass_top_rounded
+                  : Icons.print_rounded,
+              onPressed: _busy ? null : _print,
+            ),
+          ],
         ),
       ),
     );
