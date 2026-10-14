@@ -1,3 +1,6 @@
+# Inventory-
+Track Inventory and sales
+
 # Inventory App
 
 Offline inventory & sales for small shops (Flutter · iOS/Android).  
