@@ -1746,10 +1746,13 @@ class _CustomerPurchases extends ConsumerWidget {
           );
         }
         if (sales.isEmpty) {
-          return Text(
-            t('no_purchases_yet'),
-            textAlign: TextAlign.center,
-            style: TextStyle(color: p.textSecondary),
+          return Padding(
+            padding: const EdgeInsets.only(top: 40, bottom: 24),
+            child: Text(
+              t('no_purchases_yet'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: p.textSecondary),
+            ),
           );
         }
 

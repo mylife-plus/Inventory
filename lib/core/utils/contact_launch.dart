@@ -29,10 +29,10 @@ Future<void> launchContactWithMessage(
       uri = Uri(
         scheme: 'mailto',
         path: contact.raw.trim(),
-        queryParameters: {
-          'subject': subject,
-          'body': message,
-        },
+        // Percent-encode (%20) – queryParameters would turn spaces into '+',
+        // which iOS Mail / Messages show literally.
+        query: 'subject=${Uri.encodeComponent(subject)}'
+            '&body=${Uri.encodeComponent(message)}',
       );
     case CustomerContactKind.whatsapp:
       final digits = contact.raw.replaceAll(RegExp(r'[^\d+]'), '');
@@ -45,7 +45,7 @@ Future<void> launchContactWithMessage(
       uri = Uri(
         scheme: 'sms',
         path: digits,
-        queryParameters: {'body': message},
+        query: 'body=${Uri.encodeComponent(message)}',
       );
     default:
       uri = contact.uri;

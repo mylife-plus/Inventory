@@ -1,3 +1,5 @@
+// ignore: unnecessary_import -- needed on Flutter versions where material does not re-export CupertinoPageTransitionsBuilder.
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
