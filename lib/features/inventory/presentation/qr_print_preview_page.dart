@@ -66,8 +66,23 @@ class _QrPrintPreviewPageState extends ConsumerState<QrPrintPreviewPage> {
     // Let the page slide in first; then render (cache hit = instant).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_loadPerPage());
-      unawaited(_prepare());
+      unawaited(_prepareWithRetry());
     });
+  }
+
+  /// Render the label for the preview; one retry if the first raster fails
+  /// (the cells would otherwise stay empty boxes).
+  Future<void> _prepareWithRetry() async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _prepare();
+        return;
+      } catch (e, st) {
+        debugPrint('QR label preview raster failed ($attempt): $e\n$st');
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+      }
+    }
   }
 
   Future<void> _loadPerPage() async {
@@ -89,10 +104,15 @@ class _QrPrintPreviewPageState extends ConsumerState<QrPrintPreviewPage> {
     if (mounted && _png == null) {
       final dpr = MediaQuery.devicePixelRatioOf(context);
       final w = (MediaQuery.sizeOf(context).width * dpr).round();
+      // Decoded once at screen size, shared by every cell. Decode BEFORE
+      // showing it, so the cells never paint as empty boxes while the
+      // image is still decoding (seen on iOS, Oct 15).
+      final image = ResizeImage(MemoryImage(png), width: w.clamp(200, 1000));
+      await precacheImage(image, context);
+      if (!mounted || _png != null) return png;
       setState(() {
         _png = png;
-        // Decoded once at screen size, shared by every cell.
-        _image = ResizeImage(MemoryImage(png), width: w.clamp(200, 1000));
+        _image = image;
       });
       _warmSheet();
     }
@@ -354,7 +374,7 @@ class QrSheetPreview extends StatelessWidget {
                 ),
               );
             }
-            return Padding(
+            final page = Padding(
               padding: EdgeInsets.all(margin * scale),
               child: Column(
                 mainAxisAlignment: single
@@ -362,6 +382,24 @@ class QrSheetPreview extends StatelessWidget {
                     : MainAxisAlignment.start,
                 children: rows,
               ),
+            );
+            if (image != null) return page;
+            // Still rendering the label: show progress, not empty boxes.
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                page,
+                const Center(
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Color(0xFF9E9E9E),
+                    ),
+                  ),
+                ),
+              ],
             );
           },
         ),

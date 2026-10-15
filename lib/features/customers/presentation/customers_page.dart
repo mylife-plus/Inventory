@@ -944,70 +944,26 @@ class _PromptValueSheetState extends State<_PromptValueSheet> {
   }
 }
 
-class CustomerDetailPage extends ConsumerStatefulWidget {
-  const CustomerDetailPage({super.key, required this.customerId});
-
-  final String customerId;
-
-  @override
-  ConsumerState<CustomerDetailPage> createState() => _CustomerDetailPageState();
+/// The customer page's "+" add-field flow (phone, email, socials, custom
+/// field), shared with the Send Receipt sheet. Returns true when a field was
+/// saved to [customer].
+Future<bool> addCustomerContactField(
+  BuildContext context,
+  WidgetRef ref,
+  Customer customer,
+) async {
+  final flow = _AddFieldFlow(context, ref);
+  await flow._showAddOnProfile(customer);
+  return flow.saved;
 }
 
-class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
-  bool _showSearch = false;
-  final _search = TextEditingController();
-  SortState<_PurchaseSortKey> _sort = _kDefaultPurchaseSort;
-  DateTime? _from;
-  DateTime? _to;
-  Customer? _customer;
-  bool _loadingCustomer = true;
+class _AddFieldFlow {
+  _AddFieldFlow(this.context, this.ref);
+  final BuildContext context;
+  final WidgetRef ref;
+  bool saved = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _reloadCustomer();
-  }
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  Future<void> _reloadCustomer() async {
-    final c =
-        await ref.read(customerRepositoryProvider).get(widget.customerId);
-    if (!mounted) return;
-    setState(() {
-      _customer = c;
-      _loadingCustomer = false;
-    });
-  }
-
-  Future<void> _launchUri(String raw) async {
-    final uri = Uri.tryParse(raw.trim());
-    if (uri == null) return;
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  Future<void> _launch(String? value, {required String scheme}) async {
-    if (value == null || value.isEmpty) return;
-    final uri = Uri.parse('$scheme${Uri.encodeComponent(value)}');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  String? _socialUrl(String? raw, {required String host, required String pathPrefix}) {
-    if (raw == null) return null;
-    final v = raw.trim();
-    if (v.isEmpty) return null;
-    if (v.startsWith('http://') || v.startsWith('https://')) return v;
-    final handle = v.replaceFirst(RegExp(r'^@'), '');
-    return 'https://$host$pathPrefix$handle';
-  }
+  Future<void> _saved() async => saved = true;
 
   List<_SocialKind> _missingSocials(Customer c) {
     return [
@@ -1119,7 +1075,7 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
         );
       },
     );
-    if (choice == null || !mounted) return;
+    if (choice == null || !context.mounted) return;
 
     if (choice == 'phone') {
       final v = await _promptValue(
@@ -1127,22 +1083,22 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
         label: t('phone'),
         keyboardType: TextInputType.phone,
       );
-      if (v == null || v.trim().isEmpty || !mounted) return;
+      if (v == null || v.trim().isEmpty || !context.mounted) return;
       await ref.read(customersProvider.notifier).upsert(
             c.copyWith(phone: v.trim()),
           );
-      await _reloadCustomer();
+      await _saved();
     } else if (choice == 'email') {
       final v = await _promptValue(
         title: t('email'),
         label: t('email'),
         keyboardType: TextInputType.emailAddress,
       );
-      if (v == null || v.trim().isEmpty || !mounted) return;
+      if (v == null || v.trim().isEmpty || !context.mounted) return;
       await ref.read(customersProvider.notifier).upsert(
             c.copyWith(email: v.trim()),
           );
-      await _reloadCustomer();
+      await _saved();
     } else if (choice is _SocialKind) {
       await _addSocialValue(c, choice);
     } else if (choice == 'custom') {
@@ -1182,7 +1138,7 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
       label: kind == _SocialKind.whatsapp ? t('whatsapp_hint') : t('social_hint'),
       keyboardType: kind.keyboardType,
     );
-    if (value == null || value.isEmpty || !mounted) return;
+    if (value == null || value.isEmpty || !context.mounted) return;
 
     final updated = switch (kind) {
       _SocialKind.whatsapp => c.copyWith(whatsapp: value),
@@ -1192,7 +1148,7 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
       _SocialKind.telegram => c.copyWith(telegram: value),
     };
     await ref.read(customersProvider.notifier).upsert(updated);
-    await _reloadCustomer();
+    await _saved();
   }
 
   Future<void> _addCustomField(Customer c) async {
@@ -1201,12 +1157,12 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
       title: t('add_field'),
       label: t('field_name'),
     );
-    if (label == null || label.isEmpty || !mounted) return;
+    if (label == null || label.isEmpty || !context.mounted) return;
     final value = await _promptValue(
       title: label,
       label: t('field_value'),
     );
-    if (value == null || !mounted) return;
+    if (value == null || !context.mounted) return;
 
     final fields = [
       ...c.customFields,
@@ -1215,7 +1171,78 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
     await ref
         .read(customersProvider.notifier)
         .upsert(c.copyWith(customFields: fields));
-    await _reloadCustomer();
+    await _saved();
+  }
+
+}
+
+class CustomerDetailPage extends ConsumerStatefulWidget {
+  const CustomerDetailPage({super.key, required this.customerId});
+
+  final String customerId;
+
+  @override
+  ConsumerState<CustomerDetailPage> createState() => _CustomerDetailPageState();
+}
+
+class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
+  bool _showSearch = false;
+  final _search = TextEditingController();
+  SortState<_PurchaseSortKey> _sort = _kDefaultPurchaseSort;
+  DateTime? _from;
+  DateTime? _to;
+  Customer? _customer;
+  bool _loadingCustomer = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _reloadCustomer();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _reloadCustomer() async {
+    final c =
+        await ref.read(customerRepositoryProvider).get(widget.customerId);
+    if (!mounted) return;
+    setState(() {
+      _customer = c;
+      _loadingCustomer = false;
+    });
+  }
+
+  Future<void> _launchUri(String raw) async {
+    final uri = Uri.tryParse(raw.trim());
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _launch(String? value, {required String scheme}) async {
+    if (value == null || value.isEmpty) return;
+    final uri = Uri.parse('$scheme${Uri.encodeComponent(value)}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  String? _socialUrl(String? raw, {required String host, required String pathPrefix}) {
+    if (raw == null) return null;
+    final v = raw.trim();
+    if (v.isEmpty) return null;
+    if (v.startsWith('http://') || v.startsWith('https://')) return v;
+    final handle = v.replaceFirst(RegExp(r'^@'), '');
+    return 'https://$host$pathPrefix$handle';
+  }
+
+  Future<void> _showAddOnProfile(Customer c) async {
+    if (await addCustomerContactField(context, ref, c)) await _reloadCustomer();
   }
 
   Future<void> _showSortSheet() async {
@@ -1699,7 +1726,7 @@ enum _PurchaseSortKey { recent, amount }
 
 const _kDefaultPurchaseSort = SortState<_PurchaseSortKey>(_PurchaseSortKey.recent);
 
-class _CustomerPurchases extends ConsumerWidget {
+class _CustomerPurchases extends ConsumerStatefulWidget {
   const _CustomerPurchases({
     required this.salesFuture,
     required this.money,
@@ -1717,24 +1744,38 @@ class _CustomerPurchases extends ConsumerWidget {
   final DateTime? to;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CustomerPurchases> createState() => _CustomerPurchasesState();
+}
+
+/// Purchase history as RECEIPTS grouped under collapsible Year / Month
+/// headers with totals (same SectionHeader as Turnover / Inventory).
+class _CustomerPurchasesState extends ConsumerState<_CustomerPurchases> {
+  final Set<String> _collapsed = {};
+
+  void _toggle(String key) => setState(() {
+        if (!_collapsed.remove(key)) _collapsed.add(key);
+      });
+
+  @override
+  Widget build(BuildContext context) {
     final p = AppPalette.of(context);
     final t = ref.watch(tProvider);
-    final inventory = ref.watch(inventoryItemsProvider).valueOrNull ?? [];
-    final photoById = {
-      for (final i in inventory) i.id: i.photoPath,
-    };
+    final money = widget.money;
+    final sort = widget.sort;
+    final query = widget.query;
+    final from = widget.from;
+    final to = widget.to;
 
     return FutureBuilder<List<Sale>>(
-      future: salesFuture,
+      future: widget.salesFuture,
       builder: (context, salesSnap) {
         final sales = [...(salesSnap.data ?? [])].where((s) {
           if (from != null) {
-            final start = DateTime(from!.year, from!.month, from!.day);
+            final start = DateTime(from.year, from.month, from.day);
             if (s.createdAt.isBefore(start)) return false;
           }
           if (to != null) {
-            final end = DateTime(to!.year, to!.month, to!.day, 23, 59, 59);
+            final end = DateTime(to.year, to.month, to.day, 23, 59, 59);
             if (s.createdAt.isAfter(end)) return false;
           }
           return true;
@@ -1768,17 +1809,13 @@ class _CustomerPurchases extends ConsumerWidget {
               : b.createdAt.compareTo(a.createdAt));
         }
 
-        final entries = <({Sale sale, SaleLine line})>[];
-        for (final sale in sales) {
-          for (final line in sale.lines) {
-            if (query.isNotEmpty &&
-                !line.title.toLowerCase().contains(query)) {
-              continue;
-            }
-            entries.add((sale: sale, line: line));
-          }
-        }
-        if (entries.isEmpty) {
+        // Search: receipt number or any product on the receipt.
+        final receipts = sales.where((s) {
+          if (query.isEmpty) return true;
+          if (s.id.toLowerCase().startsWith(query)) return true;
+          return s.lines.any((l) => l.title.toLowerCase().contains(query));
+        }).toList();
+        if (receipts.isEmpty) {
           return Text(
             t('no_matching_purchases'),
             textAlign: TextAlign.center,
@@ -1786,89 +1823,63 @@ class _CustomerPurchases extends ConsumerWidget {
           );
         }
 
-        final byYear = <int, Map<int, List<({Sale sale, SaleLine line})>>>{};
-        for (final e in entries) {
-          final y = e.sale.createdAt.year;
-          final m = e.sale.createdAt.month;
-          byYear.putIfAbsent(y, () => {}).putIfAbsent(m, () => []).add(e);
+        final byYear = <int, Map<int, List<Sale>>>{};
+        for (final s in receipts) {
+          final d = s.createdAt.toLocal();
+          byYear.putIfAbsent(d.year, () => {}).putIfAbsent(d.month, () => []).add(s);
         }
         final years = byYear.keys.toList()
           ..sort((a, b) => oldestFirst ? a.compareTo(b) : b.compareTo(a));
+        Widget total(double v) => Text(
+              money.format(v),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                color: p.neon,
+              ),
+            );
         final widgets = <Widget>[];
         for (final year in years) {
           final months = byYear[year]!;
+          final yearKey = 'y$year';
+          final yearOpen = !_collapsed.contains(yearKey);
           final yearTotal = months.values
               .expand((e) => e)
-              .fold<double>(0, (s, e) => s + e.line.lineTotal);
+              .fold<double>(0, (s, e) => s + e.total);
           widgets.add(
             SectionHeader(
               title: '$year',
-              trailing: Text(
-                money.format(yearTotal),
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                  color: p.neon,
-                ),
-              ),
+              trailing: total(yearTotal),
+              expanded: yearOpen,
+              onToggle: () => _toggle(yearKey),
             ),
           );
+          if (!yearOpen) continue;
           final monthKeys = months.keys.toList()
             ..sort((a, b) => oldestFirst ? a.compareTo(b) : b.compareTo(a));
           for (final month in monthKeys) {
             final list = months[month]!;
-            final monthTotal =
-                list.fold<double>(0, (s, e) => s + e.line.lineTotal);
+            final monthKey = 'm$year-$month';
+            final monthOpen = !_collapsed.contains(monthKey);
+            final monthTotal = list.fold<double>(0, (s, e) => s + e.total);
             final monthName =
                 DateFormat.MMMM(t.code).format(DateTime(year, month));
             widgets.add(
               SectionHeader(
                 title: monthName,
-                trailing: Text(
-                  money.format(monthTotal),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                    color: p.neon,
-                  ),
-                ),
+                trailing: total(monthTotal),
+                expanded: monthOpen,
+                onToggle: () => _toggle(monthKey),
               ),
             );
-            // group lines by day for date labels
-            final byDay = <String, List<({Sale sale, SaleLine line})>>{};
-            for (final e in list) {
-              final d = e.sale.createdAt;
-              final key =
-                  formatDateShort(d, t.code);
-              byDay.putIfAbsent(key, () => []).add(e);
-            }
-            for (final dayEntry in byDay.entries) {
+            if (!monthOpen) continue;
+            for (final sale in list) {
               widgets.add(
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 6, top: 2),
-                  child: Text(
-                    dayEntry.key,
-                    style: TextStyle(
-                      color: p.textMuted,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _PurchaseReceiptCard(sale: sale, money: money),
                 ),
               );
-              for (final e in dayEntry.value) {
-                widgets.add(
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _PurchaseLineCard(
-                      sale: e.sale,
-                      line: e.line,
-                      photoPath: photoById[e.line.itemId],
-                      money: money,
-                    ),
-                  ),
-                );
-              }
             }
           }
         }
@@ -1882,33 +1893,28 @@ class _CustomerPurchases extends ConsumerWidget {
   }
 }
 
-class _PurchaseLineCard extends ConsumerWidget {
-  const _PurchaseLineCard({
-    required this.sale,
-    required this.line,
-    required this.money,
-    this.photoPath,
-  });
+/// One receipt in the customer's purchase history: number, date/time,
+/// item count (badge) and total. Tapping opens the receipt.
+class _PurchaseReceiptCard extends ConsumerWidget {
+  const _PurchaseReceiptCard({required this.sale, required this.money});
 
   final Sale sale;
-  final SaleLine line;
   final MoneyFormatter money;
-  final String? photoPath;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final p = AppPalette.of(context);
-    final badge = formatQty(line.quantity);
-    final amountOnly = money.formatAmount(line.unitPrice).trim();
+    final t = ref.watch(tProvider);
+    final itemCount =
+        sale.lines.fold<double>(0, (s, l) => s + l.quantity.toDouble());
 
     return MediaListCard(
       onTap: () => context.push('/sell/receipt/${sale.id}'),
       thumb: CardThumb(
-        path: photoPath ?? line.photoPath,
-        badge: badge,
+        badge: formatQty(itemCount),
+        placeholderIcon: Icons.receipt_long_rounded,
       ),
       child: Padding(
-        // Same title-to-photo padding as the Inventory item card.
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1919,7 +1925,7 @@ class _PurchaseLineCard extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  line.title,
+                  '${t('receipt')} ${sale.id.substring(0, 8).toUpperCase()}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1930,10 +1936,11 @@ class _PurchaseLineCard extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                PriceUnitLine(
-                  amount: amountOnly,
-                  symbol: money.symbol,
-                  unit: line.unit,
+                Text(
+                  formatDateTimeShort(sale.createdAt, t.code),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: p.textSecondary, fontSize: 13),
                 ),
               ],
             ),
@@ -1942,7 +1949,7 @@ class _PurchaseLineCard extends ConsumerWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerRight,
-                child: CardTotalLine(value: money.format(line.lineTotal)),
+                child: CardTotalLine(value: money.format(sale.total)),
               ),
             ),
           ],

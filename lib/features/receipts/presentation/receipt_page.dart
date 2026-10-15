@@ -16,6 +16,7 @@ import 'package:inventory_app/data/export/csv_export.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/data/resale_draft.dart';
 import 'package:inventory_app/domain/models/models.dart';
+import 'package:inventory_app/features/customers/presentation/customers_page.dart';
 import 'package:inventory_app/features/sell/presentation/sell_page.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
@@ -200,100 +201,140 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
     }
 
     if (!mounted) return;
-    final contacts = customer?.allContacts ?? const <CustomerContact>[];
-    if (contacts.isEmpty) {
+    // Guest / no customer: straight to the system share sheet (no "+").
+    if (customer == null) {
       await shareWithOrigin(ShareParams(text: body), context);
       return;
     }
 
     if (!mounted) return;
+    var sheetCustomer = customer;
     await showAppSheet<void>(
       context: context,
       heightFactor: 0.62,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppSheetHeader(title: t('send_receipt')),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  // Only the contact options — no customer card here.
-                  children: [
-                    if (contacts.isEmpty)
-                      ListTile(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: p.stroke),
-                        ),
-                        leading: Icon(Icons.ios_share_rounded, color: p.neon),
-                        title: Text(
-                          t('share'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: p.textPrimary,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final contacts = sheetCustomer.allContacts;
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // No X (client, Oct 15): drag handle, swipe, tap outside, back.
+                AppSheetHeader(title: t('send_receipt'), showClose: false),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    // Only the contact options — no customer card here.
+                    children: [
+                      if (contacts.isEmpty)
+                        ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: p.stroke),
                           ),
-                        ),
-                        onTap: () async {
-                          Navigator.pop(ctx);
-                          await shareWithOrigin(ShareParams(text: body), ctx);
-                        },
-                      )
-                    else ...[
-                      for (final contact in contacts)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(color: p.stroke),
+                          leading: Icon(Icons.ios_share_rounded, color: p.neon),
+                          title: Text(
+                            t('share'),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: p.textPrimary,
                             ),
-                            leading: AppIcon(contact.iconAsset, size: 28),
-                            title: Text(
-                              contact.display,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: p.textPrimary,
+                          ),
+                          onTap: () async {
+                            Navigator.pop(ctx);
+                            await shareWithOrigin(ShareParams(text: body), ctx);
+                          },
+                        )
+                      else ...[
+                        for (final contact in contacts)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(color: p.stroke),
                               ),
+                              leading: AppIcon(contact.iconAsset, size: 28),
+                              title: Text(
+                                contact.display,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: p.textPrimary,
+                                ),
+                              ),
+                              onTap: () async {
+                                Navigator.pop(ctx);
+                                await launchContactWithMessage(
+                                  contact,
+                                  body,
+                                  subject: t('receipt'),
+                                );
+                              },
                             ),
-                            onTap: () async {
-                              Navigator.pop(ctx);
-                              await launchContactWithMessage(
-                                contact,
-                                body,
-                                subject: t('receipt'),
-                              );
-                            },
+                          ),
+                        ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: p.stroke),
+                          ),
+                          leading: Icon(Icons.ios_share_rounded, color: p.neon),
+                          title: Text(
+                            t('share'),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: p.textPrimary,
+                            ),
+                          ),
+                          onTap: () async {
+                            Navigator.pop(ctx);
+                            await shareWithOrigin(ShareParams(text: body), ctx);
+                          },
+                        ),
+                      ],
+                      // "+": same add-field flow as the customer page; the new
+                      // contact then shows up in this list.
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Pressable(
+                          onTap: () async {
+                            final saved = await addCustomerContactField(
+                              ctx,
+                              ref,
+                              sheetCustomer,
+                            );
+                            if (!saved) return;
+                            final fresh = await ref
+                                .read(customerRepositoryProvider)
+                                .get(sheetCustomer.id);
+                            if (fresh != null && ctx.mounted) {
+                              setSheet(() => sheetCustomer = fresh);
+                            }
+                          },
+                          child: Container(
+                            height: 56,
+                            width: double.infinity,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: p.stroke),
+                            ),
+                            child: Icon(
+                              Icons.add_rounded,
+                              size: 26,
+                              color: p.textMuted,
+                            ),
                           ),
                         ),
-                      ListTile(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: p.stroke),
-                        ),
-                        leading: Icon(Icons.ios_share_rounded, color: p.neon),
-                        title: Text(
-                          t('share'),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: p.textPrimary,
-                          ),
-                        ),
-                        onTap: () async {
-                          Navigator.pop(ctx);
-                          await shareWithOrigin(ShareParams(text: body), ctx);
-                        },
                       ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

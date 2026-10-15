@@ -233,7 +233,13 @@ class PrintService {
         : (android ? PdfPageFormat.a6 : _finiteFormat(format));
 
     Future<Uint8List> wrapOnly(PdfPageFormat requested) async {
-      final target = _finiteFormat(android ? pageFormat : requested);
+      // A label sheet is always laid out on A4 (same grid as the in-app
+      // preview). iOS used to lay it out for whatever paper it proposed and
+      // then drew that page 1:1 on A4, so rows went missing / the grid sat
+      // in a corner (client, Oct 15).
+      final target = _finiteFormat(
+        android || sheet ? pageFormat : requested,
+      );
       final out = await labelSheetPdf(png, count, target);
       debugPrint(
         'QR label print open: ${out.length} bytes '
@@ -263,9 +269,11 @@ class PrintService {
       name: 'QR-$title',
       format: pageFormat,
       // Android: false avoids repeated onLayout while the dialog is open.
-      dynamicLayout: !android,
-      // iOS: the compact sticker needs the custom paper; an A4 sheet does not.
-      forceCustomPrintPaper: !android && !sheet,
+      // iOS sheet: fixed A4 page, no re-layout for the proposed paper.
+      dynamicLayout: !android && !sheet,
+      // iOS draws our PDF page 1:1 onto the chosen paper (no scaling), so
+      // the paper must be exactly our page size: sticker AND A4 sheet.
+      forceCustomPrintPaper: !android,
     );
   }
 
@@ -769,21 +777,7 @@ class PrintService {
     final qrData = shop.receiptQrData;
     // Thermal rolls need small type; A4 gets readable sizes.
     final scale = roll ? 1.0 : 1.35;
-    final doc = pw.Document();
-    doc.addPage(
-      pw.Page(
-        pageFormat: format,
-        margin: roll
-            ? const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6)
-            : const pw.EdgeInsets.symmetric(horizontal: 56, vertical: 48),
-        theme: pw.ThemeData.withFont(
-          base: fonts.regular,
-          bold: fonts.bold,
-          italic: fonts.regular,
-          boldItalic: fonts.bold,
-          icons: fonts.regular,
-        ),
-        build: (context) {
+    pw.Widget content() {
           pw.TextStyle body([double size = 8]) =>
               pw.TextStyle(font: fonts.regular, fontSize: size * scale);
           pw.TextStyle bold([double size = 9]) =>
@@ -912,7 +906,23 @@ class PrintService {
               ),
             ],
           );
-        },
+    }
+
+    final doc = pw.Document();
+    doc.addPage(
+      pw.Page(
+        pageFormat: format,
+        margin: roll
+            ? const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6)
+            : const pw.EdgeInsets.symmetric(horizontal: 56, vertical: 48),
+        theme: pw.ThemeData.withFont(
+          base: fonts.regular,
+          bold: fonts.bold,
+          italic: fonts.regular,
+          boldItalic: fonts.bold,
+          icons: fonts.regular,
+        ),
+        build: (_) => content(),
       ),
     );
 
@@ -929,8 +939,49 @@ class PrintService {
       '(${pageFormat.width.toStringAsFixed(0)}x${pageFormat.height.toStringAsFixed(0)}pt, '
       'qr=${qrData != null})',
     );
+    final fitted = pageFormat;
+    final theme = pw.ThemeData.withFont(
+      base: fonts.regular,
+      bold: fonts.bold,
+      italic: fonts.regular,
+      boldItalic: fonts.bold,
+      icons: fonts.regular,
+    );
+    final pad = roll
+        ? const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6)
+        : const pw.EdgeInsets.symmetric(horizontal: 56, vertical: 48);
+    // iOS draws the PDF page 1:1 on its paper (no scaling). When iOS lays
+    // out for a different paper (e.g. A4 preview, no printer selected),
+    // the same receipt is scaled to that paper's width, top aligned.
+    _receiptRefit = (paper) async {
+      final d = pw.Document();
+      d.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat(paper.width, paper.height),
+          margin: pw.EdgeInsets.zero,
+          theme: theme,
+          // Tight box: FittedBox only scales UP under tight constraints.
+          build: (_) => pw.SizedBox(
+            width: paper.width,
+            height: paper.height,
+            child: pw.FittedBox(
+              fit: pw.BoxFit.contain,
+              alignment: pw.Alignment.topCenter,
+              child: pw.SizedBox(
+                width: fitted.width,
+                height: fitted.height,
+                child: pw.Padding(padding: pad, child: content()),
+              ),
+            ),
+          ),
+        ),
+      );
+      return d.save();
+    };
     return (bytes: bytes, format: pageFormat);
   }
+
+  static Future<Uint8List> Function(PdfPageFormat paper)? _receiptRefit;
 
   /// Opens the system print dialog for a receipt built by [buildReceiptPdf].
   /// Bytes are prebuilt; `onLayout` only returns them (no nested work).
@@ -952,11 +1003,29 @@ class PrintService {
               ? PdfPageFormat.a4
               : PdfPageFormat.a6)
         : format;
+    final refit = _receiptRefit;
     await Printing.layoutPdf(
-      onLayout: (_) async => bytes,
+      onLayout: (paper) async {
+        if (android || refit == null) return bytes;
+        final same = (paper.width - format.width).abs() < 1 &&
+            (paper.height - format.height).abs() < 1;
+        if (same || !paper.width.isFinite || !paper.height.isFinite) {
+          return bytes;
+        }
+        try {
+          return await refit(paper);
+        } catch (e) {
+          debugPrint('Receipt refit failed: $e');
+          return bytes;
+        }
+      },
       name: 'Receipt-${sale.id.substring(0, 8)}',
       format: hint,
       dynamicLayout: !android,
+      // iOS draws the PDF page 1:1 on the selected paper (no scaling): a
+      // 80/58 mm roll page on A4/Letter came out tiny in the corner. Use
+      // our exact page as the paper (roll width x content height, or A4).
+      forceCustomPrintPaper: !android,
     );
   }
 }
