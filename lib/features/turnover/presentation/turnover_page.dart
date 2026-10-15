@@ -53,6 +53,14 @@ class TurnoverPage extends ConsumerStatefulWidget {
 }
 
 class _TurnoverPageState extends ConsumerState<TurnoverPage> {
+  /// Collapsed Year ('y2026') / Month ('m2026-10') headers of the sold list
+  /// (same behavior as the customer purchase history).
+  final Set<String> _collapsedSold = {};
+
+  void _toggleSold(String key) => setState(() {
+        if (!_collapsedSold.remove(key)) _collapsedSold.add(key);
+      });
+
   TurnoverPeriod _period = TurnoverPeriod.m1;
   SortState<TurnoverSortKey> _sort = _kDefaultTurnoverSort;
   DateTime? _customFrom;
@@ -459,9 +467,13 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                         final yearTotal = months.values
                             .expand((e) => e)
                             .fold<double>(0, (s, i) => s + i.revenue);
+                        final yearKey = 'y$year';
+                        final yearOpen = !_collapsedSold.contains(yearKey);
                         out.add(
                           SectionHeader(
                             title: '$year',
+                            expanded: yearOpen,
+                            onToggle: () => _toggleSold(yearKey),
                             trailing: Text(
                               money.format(yearTotal),
                               style: TextStyle(
@@ -472,6 +484,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                             ),
                           ),
                         );
+                        if (!yearOpen) continue;
                         final sortedMonths = months.keys.toList()
                           ..sort((a, b) => b.compareTo(a));
                         for (final month in sortedMonths) {
@@ -483,9 +496,14 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                           final monthName = DateFormat.MMMM(
                             t.code,
                           ).format(DateTime(year, month));
+                          final monthKey = 'm$year-$month';
+                          final monthOpen =
+                              !_collapsedSold.contains(monthKey);
                           out.add(
                             SectionHeader(
                               title: monthName,
+                              expanded: monthOpen,
+                              onToggle: () => _toggleSold(monthKey),
                               trailing: Text(
                                 money.format(monthTotal),
                                 style: TextStyle(
@@ -496,7 +514,7 @@ class _TurnoverPageState extends ConsumerState<TurnoverPage> {
                               ),
                             ),
                           );
-                          out.addAll(list.map(buildItemCard));
+                          if (monthOpen) out.addAll(list.map(buildItemCard));
                         }
                       }
                       return out;

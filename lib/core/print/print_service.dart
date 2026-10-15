@@ -287,8 +287,10 @@ class PrintService {
   static const int qrLabelsPerPageMax = 25;
 
   /// A4 label sheet: outer margin and gap between labels (print + preview).
-  static const double labelSheetMargin = 8 * PdfPageFormat.mm;
-  static const double labelSheetGap = 4 * PdfPageFormat.mm;
+  /// 10 mm: real printers cannot print the outer ~3-6 mm (hardware margin);
+  /// with 8 mm the top row was cut on an iPhone + printer (client, Oct 15).
+  static const double labelSheetMargin = 10 * PdfPageFormat.mm;
+  static const double labelSheetGap = 3 * PdfPageFormat.mm;
   static const String _qrPerPagePrefKey = 'qr_labels_per_page';
 
   static Future<int> lastQrLabelsPerPage() async {

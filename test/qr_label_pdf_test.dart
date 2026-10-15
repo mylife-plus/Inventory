@@ -358,8 +358,8 @@ void main() {
   );
 
   test('labels-per-page grid fits every option on A4 without overlap', () {
-    const margin = 8 * PdfPageFormat.mm;
-    const gap = 4 * PdfPageFormat.mm;
+    const margin = PrintService.labelSheetMargin;
+    const gap = PrintService.labelSheetGap;
     final w = PdfPageFormat.a4.width - 2 * margin;
     final h = PdfPageFormat.a4.height - 2 * margin;
     for (final n in PrintService.qrLabelsPerPageOptions) {
