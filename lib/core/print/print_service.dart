@@ -233,14 +233,19 @@ class PrintService {
         : (android ? PdfPageFormat.a6 : _finiteFormat(format));
 
     Future<Uint8List> wrapOnly(PdfPageFormat requested) async {
-      // A label sheet is always laid out on A4 (same grid as the in-app
-      // preview). iOS used to lay it out for whatever paper it proposed and
-      // then drew that page 1:1 on A4, so rows went missing / the grid sat
-      // in a corner (client, Oct 15).
+      // iOS draws our page 1:1 onto ITS paper (no scaling, top part cut
+      // when our page is taller). With no printer selected iOS uses the
+      // region default (Letter on a US iPhone), so an A4 page lost its top
+      // row (client, Oct 15). So on iOS the sheet is laid out on exactly the
+      // paper iOS passes, inside its printable area and at least 10 mm from
+      // every edge. Android keeps A4 (the system scales it).
       final target = _finiteFormat(
-        android || sheet ? pageFormat : requested,
+        android ? pageFormat : (sheet ? _paperOnly(requested) : requested),
       );
-      final out = await labelSheetPdf(png, count, target);
+      final margin = android || !sheet
+          ? labelSheetMargin
+          : safeSheetMargin(requested);
+      final out = await labelSheetPdf(png, count, target, margin: margin);
       debugPrint(
         'QR label print open: ${out.length} bytes '
         '(${target.width.toStringAsFixed(1)}x${target.height.toStringAsFixed(1)}pt'
@@ -269,8 +274,8 @@ class PrintService {
       name: 'QR-$title',
       format: pageFormat,
       // Android: false avoids repeated onLayout while the dialog is open.
-      // iOS sheet: fixed A4 page, no re-layout for the proposed paper.
-      dynamicLayout: !android && !sheet,
+      // iOS: lay out for the paper iOS actually uses (see wrapOnly).
+      dynamicLayout: !android,
       // iOS draws our PDF page 1:1 onto the chosen paper (no scaling), so
       // the paper must be exactly our page size: sticker AND A4 sheet.
       forceCustomPrintPaper: !android,
@@ -368,15 +373,16 @@ class PrintService {
   static Future<Uint8List> labelSheetPdf(
     Uint8List png,
     int count,
-    PdfPageFormat format,
-  ) async {
+    PdfPageFormat format, {
+    double margin = labelSheetMargin,
+  }) async {
     final f = _finiteFormat(format);
     final key =
-        '${identityHashCode(png)}:${png.length}:$count:${f.width}x${f.height}';
+        '${identityHashCode(png)}:${png.length}:$count:${f.width}x${f.height}:$margin';
     final hit = _sheetCache[key];
     if (hit != null) return hit;
     final out = count > 1
-        ? await wrapLabelGridPdf(png, count, f)
+        ? await wrapLabelGridPdf(png, count, f, margin: margin)
         : await wrapLabelImagePdf(png, f);
     if (_sheetCache.length > 12) _sheetCache.clear();
     return _sheetCache[key] = out;
@@ -396,8 +402,9 @@ class PrintService {
   static Future<Uint8List> wrapLabelGridPdf(
     Uint8List png,
     int count,
-    PdfPageFormat format,
-  ) async {
+    PdfPageFormat format, {
+    double margin = labelSheetMargin,
+  }) async {
     if (count <= 1) return wrapLabelImagePdf(png, format);
     if (png.length < _minPngBytes) {
       throw StateError('Cannot wrap tiny PNG (${png.length} bytes)');
@@ -408,6 +415,7 @@ class PrintService {
       count: count,
       w: pageFormat.width,
       h: pageFormat.height,
+      m: margin,
     ));
     _validatePdf(bytes, 'grid');
     return bytes;
@@ -416,9 +424,9 @@ class PrintService {
   static Future<Uint8List> _gridPdf(
     Uint8List png,
     int count,
-    PdfPageFormat pageFormat,
-  ) async {
-    const margin = labelSheetMargin;
+    PdfPageFormat pageFormat, {
+    double margin = labelSheetMargin,
+  }) async {
     const gap = labelSheetGap;
     final grid = qrLabelGrid(
       count,
@@ -465,7 +473,7 @@ class PrintService {
     doc.addPage(
       pw.Page(
         pageFormat: pageFormat,
-        margin: const pw.EdgeInsets.all(margin),
+        margin: pw.EdgeInsets.all(margin),
         build: (_) => pw.Column(
           mainAxisAlignment: pw.MainAxisAlignment.start,
           children: rows,
@@ -473,6 +481,32 @@ class PrintService {
       ),
     );
     return doc.save();
+  }
+
+  /// Uniform sheet margin for [paper]: at least [labelSheetMargin] and never
+  /// inside the printer's unprintable border iOS reports.
+  static double safeSheetMargin(PdfPageFormat paper) {
+    var m = labelSheetMargin;
+    for (final v in [
+      paper.marginLeft,
+      paper.marginTop,
+      paper.marginRight,
+      paper.marginBottom,
+    ]) {
+      if (v.isFinite && v + 2 * PdfPageFormat.mm > m) {
+        m = v + 2 * PdfPageFormat.mm;
+      }
+    }
+    return m;
+  }
+
+  /// [format] size without margins (A4 when the size is unusable).
+  static PdfPageFormat _paperOnly(PdfPageFormat format) {
+    final ok = format.width.isFinite &&
+        format.height.isFinite &&
+        format.width > 200 &&
+        format.height > 200;
+    return ok ? PdfPageFormat(format.width, format.height) : PdfPageFormat.a4;
   }
 
   static void _validatePdf(Uint8List bytes, String label) {
@@ -544,6 +578,7 @@ class PrintService {
       count: 1,
       w: pageFormat.width,
       h: pageFormat.height,
+      m: 0.0,
     ));
     _validatePdf(bytes, 'wrap');
     return bytes;
@@ -1032,10 +1067,10 @@ class PrintService {
   }
 }
 
-typedef _SheetJob = ({Uint8List png, int count, double w, double h});
+typedef _SheetJob = ({Uint8List png, int count, double w, double h, double m});
 
 Future<Uint8List> _gridPdfWorker(_SheetJob j) =>
-    PrintService._gridPdf(j.png, j.count, PdfPageFormat(j.w, j.h));
+    PrintService._gridPdf(j.png, j.count, PdfPageFormat(j.w, j.h), margin: j.m);
 
 Future<Uint8List> _imagePdfWorker(_SheetJob j) =>
     PrintService._imagePdf(j.png, PdfPageFormat(j.w, j.h));
