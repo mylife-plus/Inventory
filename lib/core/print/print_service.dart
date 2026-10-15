@@ -276,9 +276,12 @@ class PrintService {
       // Android: false avoids repeated onLayout while the dialog is open.
       // iOS: lay out for the paper iOS actually uses (see wrapOnly).
       dynamicLayout: !android,
-      // iOS draws our PDF page 1:1 onto the chosen paper (no scaling), so
-      // the paper must be exactly our page size: sticker AND A4 sheet.
-      forceCustomPrintPaper: !android,
+      // iOS draws our PDF page 1:1 onto the chosen paper (no scaling).
+      // Sticker: force our exact page as the paper. Sheet: let iOS pick the
+      // REAL paper (Letter/A4 in the printer) and lay out for it in
+      // onLayout. Forcing A4 here printed A4 1:1 on Letter paper and the
+      // last row fell off (client, Oct 15).
+      forceCustomPrintPaper: !android && !sheet,
     );
   }
 
@@ -474,9 +477,15 @@ class PrintService {
       pw.Page(
         pageFormat: pageFormat,
         margin: pw.EdgeInsets.all(margin),
-        build: (_) => pw.Column(
-          mainAxisAlignment: pw.MainAxisAlignment.start,
-          children: rows,
+        // Never overflow (an overflowing row is dropped): scale the whole
+        // grid down to the printable area if rounding ever makes it bigger.
+        build: (_) => pw.FittedBox(
+          fit: pw.BoxFit.scaleDown,
+          alignment: pw.Alignment.topCenter,
+          child: pw.Column(
+            mainAxisSize: pw.MainAxisSize.min,
+            children: rows,
+          ),
         ),
       ),
     );

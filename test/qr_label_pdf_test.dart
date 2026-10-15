@@ -1,3 +1,4 @@
+import 'dart:io' show zlib;
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -291,6 +292,7 @@ final Uint8List _samplePng = Uint8List.fromList(
 );
 
 void main() {
+  _sheetCountTests();
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
@@ -468,4 +470,43 @@ void main() {
 int asciiCount(Uint8List bytes, String needle) {
   return needle.allMatches(String.fromCharCodes(bytes)).length;
 
+}
+
+/// Counts image draws ("Do") in the PDF's Flate content streams.
+int _imageDraws(Uint8List bytes) {
+  final s = latin1.decode(bytes);
+  var draws = 0;
+  final re = RegExp(r'stream\r?\n');
+  for (final m in re.allMatches(s)) {
+    final end = s.indexOf('endstream', m.end);
+    if (end < 0) continue;
+    try {
+      final data = zlib.decode(bytes.sublist(m.end, end));
+      draws += RegExp(r'\sDo\b').allMatches(latin1.decode(data)).length;
+    } catch (_) {}
+  }
+  return draws;
+}
+
+void _sheetCountTests() {
+  test('label sheet: exactly 1 page and N labels on Letter and A4, 1-25', () async {
+    final papers = {
+      'A4': const PdfPageFormat(595.28, 841.89),
+      'Letter': const PdfPageFormat(612, 792),
+    };
+    for (final e in papers.entries) {
+      final margin = PrintService.safeSheetMargin(e.value);
+      for (var n = 2; n <= 25; n++) {
+        final bytes = await PrintService.labelSheetPdf(
+          _samplePng,
+          n,
+          e.value,
+          margin: margin,
+        );
+        expect(asciiCount(bytes, '/Type/Page') - asciiCount(bytes, '/Type/Pages'),
+            1, reason: '${e.key} n=$n pages');
+        expect(_imageDraws(bytes), n, reason: '${e.key} n=$n labels');
+      }
+    }
+  });
 }
