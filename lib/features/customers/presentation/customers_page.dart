@@ -13,6 +13,7 @@ import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/features/customers/presentation/customer_list_tools.dart';
+import 'package:inventory_app/features/receipts/presentation/receipt_page.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
@@ -824,17 +825,7 @@ class _AddCustomFieldSheetBodyState extends State<_AddCustomFieldSheetBody> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              t('add_field'),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 17,
-                color: p.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 14),
+            AppSheetTitle(t('add_field')),
             TextField(
               controller: _labelCtrl,
               autofocus: true,
@@ -913,17 +904,7 @@ class _PromptValueSheetState extends State<_PromptValueSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              widget.title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 17,
-                color: widget.titleColor,
-              ),
-            ),
-            const SizedBox(height: 14),
+            AppSheetTitle(widget.title),
             TextField(
               controller: _ctrl,
               autofocus: true,
@@ -1003,20 +984,7 @@ class _AddFieldFlow {
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: Text(
-                      t('add_field'),
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 17,
-                        color: p.textPrimary,
-                      ),
-                    ),
-                  ),
-                ),
+                AppSheetTitle(t('add_field')),
                 if (needPhone)
                   ListTile(
                     leading: const Icon(
@@ -1877,7 +1845,12 @@ class _CustomerPurchasesState extends ConsumerState<_CustomerPurchases> {
               widgets.add(
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: _PurchaseReceiptCard(sale: sale, money: money),
+                  // Same row as Settings > Receipts, gray icon (client, Oct 16).
+                  child: ReceiptListRow(
+                    sale: sale,
+                    money: money,
+                    iconColor: p.textMuted,
+                  ),
                 ),
               );
             }
@@ -1889,72 +1862,6 @@ class _CustomerPurchasesState extends ConsumerState<_CustomerPurchases> {
           children: widgets,
         );
       },
-    );
-  }
-}
-
-/// One receipt in the customer's purchase history: number, date/time,
-/// item count (badge) and total. Tapping opens the receipt.
-class _PurchaseReceiptCard extends ConsumerWidget {
-  const _PurchaseReceiptCard({required this.sale, required this.money});
-
-  final Sale sale;
-  final MoneyFormatter money;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final p = AppPalette.of(context);
-    final t = ref.watch(tProvider);
-    final itemCount =
-        sale.lines.fold<double>(0, (s, l) => s + l.quantity.toDouble());
-
-    return MediaListCard(
-      onTap: () => context.push('/sell/receipt/${sale.id}'),
-      thumb: CardThumb(
-        badge: formatQty(itemCount),
-        placeholderIcon: Icons.receipt_long_rounded,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${t('receipt')} ${sale.id.substring(0, 8).toUpperCase()}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18,
-                    height: 1.2,
-                    color: p.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  formatDateTimeShort(sale.createdAt, t.code),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: p.textSecondary, fontSize: 13),
-                ),
-              ],
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
-                child: CardTotalLine(value: money.format(sale.total)),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -321,15 +321,7 @@ class AppSheetHeader extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 17,
-                        color: p.textPrimary,
-                      ),
-                    ),
+                    AppSheetTitle(title, padding: EdgeInsets.zero),
                     if (subtitle != null) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -345,8 +337,41 @@ class AppSheetHeader extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppSheetTitle.gapBelow),
       ],
+    );
+  }
+}
+
+/// The one title style for every bottom sheet / popup (client, Oct 16):
+/// 17 pt bold, centered, [gapAbove] under the drag handle and [gapBelow]
+/// before the first row.
+class AppSheetTitle extends StatelessWidget {
+  const AppSheetTitle(this.title, {super.key, this.padding});
+
+  static const double gapAbove = 14;
+  static const double gapBelow = 18;
+
+  final String title;
+
+  /// Defaults to [gapAbove] / [gapBelow].
+  final EdgeInsets? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    return Padding(
+      padding: padding ??
+          const EdgeInsets.only(top: gapAbove, bottom: gapBelow),
+      child: Text(
+        title,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 17,
+          color: p.textPrimary,
+        ),
+      ),
     );
   }
 }

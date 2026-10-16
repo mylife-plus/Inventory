@@ -211,16 +211,13 @@ class _QrPrintPreviewPageState extends ConsumerState<QrPrintPreviewPage> {
                 ),
               ),
             ),
-            Text(
+            AppSheetTitle(
               t('print_preview_title'),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: p.textPrimary,
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
+              padding: const EdgeInsets.only(
+                top: AppSheetTitle.gapAbove - 8,
+                bottom: AppSheetTitle.gapBelow,
               ),
             ),
-            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(

@@ -227,75 +227,36 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     // Only the contact options — no customer card here.
                     children: [
-                      if (contacts.isEmpty)
-                        ListTile(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(color: p.stroke),
-                          ),
-                          leading: Icon(Icons.ios_share_rounded, color: p.neon),
-                          title: Text(
-                            t('share'),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: p.textPrimary,
+                      for (final contact in contacts)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(color: p.stroke),
                             ),
-                          ),
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            await shareWithOrigin(ShareParams(text: body), ctx);
-                          },
-                        )
-                      else ...[
-                        for (final contact in contacts)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(color: p.stroke),
+                            leading: AppIcon(contact.iconAsset, size: 28),
+                            title: Text(
+                              contact.display,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: p.textPrimary,
                               ),
-                              leading: AppIcon(contact.iconAsset, size: 28),
-                              title: Text(
-                                contact.display,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: p.textPrimary,
-                                ),
-                              ),
-                              onTap: () async {
-                                Navigator.pop(ctx);
-                                await launchContactWithMessage(
-                                  contact,
-                                  body,
-                                  subject: t('receipt'),
-                                );
-                              },
                             ),
+                            onTap: () async {
+                              Navigator.pop(ctx);
+                              await launchContactWithMessage(
+                                contact,
+                                body,
+                                subject: t('receipt'),
+                              );
+                            },
                           ),
-                        ListTile(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(color: p.stroke),
-                          ),
-                          leading: Icon(Icons.ios_share_rounded, color: p.neon),
-                          title: Text(
-                            t('share'),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: p.textPrimary,
-                            ),
-                          ),
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            await shareWithOrigin(ShareParams(text: body), ctx);
-                          },
                         ),
-                      ],
-                      // "+": same add-field flow as the customer page; the new
-                      // contact then shows up in this list.
+                      // "+" above Share (client, Oct 16): same add-field flow as
+                      // the customer page; the new contact then shows up here.
                       Padding(
-                        padding: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.only(bottom: 8),
                         child: Pressable(
                           onTap: () async {
                             final saved = await addCustomerContactField(
@@ -326,6 +287,24 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                             ),
                           ),
                         ),
+                      ),
+                      ListTile(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: p.stroke),
+                        ),
+                        leading: Icon(Icons.ios_share_rounded, color: p.neon),
+                        title: Text(
+                          t('share'),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: p.textPrimary,
+                          ),
+                        ),
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          await shareWithOrigin(ShareParams(text: body), ctx);
+                        },
                       ),
                     ],
                   ),
@@ -838,7 +817,12 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
-                  onPressed: () => context.go('/inventory'),
+                  // Back to where the receipt was opened from (customer
+                  // page, Settings > Receipts …); after a sale there is
+                  // nothing to go back to → Inventory (client, Oct 16).
+                  onPressed: () => context.canPop()
+                      ? context.pop()
+                      : context.go('/inventory'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: p.textPrimary,
                     side: BorderSide(color: p.stroke),
@@ -1246,46 +1230,7 @@ class ReceiptsYearPage extends ConsumerWidget {
               final sale = yearSales[i];
               return FadeSlide(
                 delay: Duration(milliseconds: 30 * i),
-                child: AppCard(
-                  onTap: () => context.push('/sell/receipt/${sale.id}'),
-                  child: Row(
-                    children: [
-                      Icon(Icons.receipt_long_rounded, color: p.neon),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              // 'Guest' is the stored sentinel; show it in
-                              // the app language.
-                              (sale.customerName == null ||
-                                      sale.customerName!.trim().isEmpty ||
-                                      sale.customerName == 'Guest')
-                                  ? t('guest')
-                                  : sale.customerName!,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: p.textPrimary,
-                              ),
-                            ),
-                            Text(
-                              formatDateTimeShort(sale.createdAt, t.code),
-                              style: TextStyle(
-                                color: p.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      MoneyText(
-                        money.format(sale.total),
-                        weight: FontWeight.w800,
-                      ),
-                    ],
-                  ),
-                ),
+                child: ReceiptListRow(sale: sale, money: money),
               );
             },
           );
@@ -1373,6 +1318,63 @@ class _PaperOptionRow extends StatelessWidget {
             Icon(Icons.print_rounded, size: 22, color: p.textSecondary),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// One receipt row (Settings > Receipts and the customer page): receipt
+/// icon, customer name, date/time, total. Tap opens the receipt.
+class ReceiptListRow extends ConsumerWidget {
+  const ReceiptListRow({
+    super.key,
+    required this.sale,
+    required this.money,
+    this.iconColor,
+  });
+
+  final Sale sale;
+  final MoneyFormatter money;
+
+  /// Defaults to the app green (Settings); the customer page uses gray.
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final p = AppPalette.of(context);
+    final t = ref.watch(tProvider);
+    return AppCard(
+      onTap: () => context.push('/sell/receipt/${sale.id}'),
+      child: Row(
+        children: [
+          Icon(Icons.receipt_long_rounded, color: iconColor ?? p.neon),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  // 'Guest' is the stored sentinel; show it in the app
+                  // language.
+                  (sale.customerName == null ||
+                          sale.customerName!.trim().isEmpty ||
+                          sale.customerName == 'Guest')
+                      ? t('guest')
+                      : sale.customerName!,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: p.textPrimary,
+                  ),
+                ),
+                Text(
+                  formatDateTimeShort(sale.createdAt, t.code),
+                  style: TextStyle(color: p.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          MoneyText(money.format(sale.total), weight: FontWeight.w800),
+        ],
       ),
     );
   }
