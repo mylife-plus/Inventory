@@ -480,6 +480,8 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
       message: t('edit_sale_message'),
       cancelLabel: t('cancel'),
       confirmLabel: t('continue_action'),
+      // Continue deletes the receipt → danger style (client, Oct 17).
+      destructive: true,
     );
     if (!ok || !mounted) return;
     setState(() => _undoing = true);

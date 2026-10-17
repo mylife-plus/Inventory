@@ -573,6 +573,48 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                 labelText: t('last_name'),
               ),
             ),
+            // Notes sits directly below Last Name (client, Oct 17), together
+            // with any custom field the user named "Notes".
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _notes,
+              decoration: InputDecoration(
+                labelText: t('notes'),
+                hintText: t('notes_hint'),
+                prefixIcon: _fieldIcon(AppAssets.notes),
+              ),
+              minLines: 1,
+              maxLines: null,
+              textAlignVertical: TextAlignVertical.center,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+            for (final entry in _customFields
+                .where((e) => isNotesFieldLabel(e.label))
+                .toList()) ...[
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: entry.controller,
+                decoration: InputDecoration(
+                  labelText: entry.label,
+                  // Label always on top (no icon), value typed inside.
+                  floatingLabelBehavior: FloatingLabelBehavior.always,
+                  hintText: t('field_value'),
+                  suffixIcon: IconButton(
+                    tooltip: t('delete'),
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () {
+                      setState(() => _customFields.remove(entry));
+                      WidgetsBinding.instance
+                          .addPostFrameCallback((_) => entry.dispose());
+                    },
+                  ),
+                ),
+                textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.sentences,
+              ),
+            ],
             const SizedBox(height: 14),
             TextFormField(
               controller: _phone,
@@ -647,7 +689,9 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
               ),
               const SizedBox(height: 14),
             ],
-            for (final entry in List<_CustomFieldEntry>.from(_customFields)) ...[
+            for (final entry in _customFields
+                .where((e) => !isNotesFieldLabel(e.label))
+                .toList()) ...[
               TextFormField(
                 controller: entry.controller,
                 decoration: InputDecoration(
@@ -680,21 +724,6 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                 hintText: t('add_field'),
                 suffixIcon: const Icon(Icons.add_rounded, size: 26),
               ),
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _notes,
-              decoration: InputDecoration(
-                labelText: t('notes'),
-                hintText: t('notes_hint'),
-                prefixIcon: _fieldIcon(AppAssets.notes),
-              ),
-              minLines: 1,
-              maxLines: null,
-              textAlignVertical: TextAlignVertical.center,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              textCapitalization: TextCapitalization.sentences,
             ),
           ],
         ),
@@ -1161,6 +1190,9 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
   DateTime? _to;
   Customer? _customer;
   bool _loadingCustomer = true;
+  final _scroll = ScrollController();
+  Future<List<Sale>>? _salesFuture;
+  Future<CustomerStats>? _statsFuture;
 
   @override
   void initState() {
@@ -1171,6 +1203,7 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
   @override
   void dispose() {
     _search.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -1310,9 +1343,11 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
       );
     }
 
-    final salesFuture =
+    // Cached: a new Future on every rebuild reset the purchase list to a
+    // loader (scroll jumped to the top on return from a receipt).
+    final salesFuture = _salesFuture ??=
         ref.read(saleRepositoryProvider).listForCustomer(customerId);
-    final statsFuture =
+    final statsFuture = _statsFuture ??=
         ref.read(customerRepositoryProvider).stats(customerId);
     final settings = ref.watch(shopSettingsProvider).valueOrNull;
     final money = MoneyFormatter(
@@ -1335,6 +1370,10 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
         ],
       ),
       body: ListView(
+        // Same controller + storage key across rebuilds: Done on a receipt
+        // comes back at the exact scroll position (client, Oct 17).
+        key: PageStorageKey<String>('customer-detail-$customerId'),
+        controller: _scroll,
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
         children: [
           Center(
@@ -1407,6 +1446,21 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
             },
           ),
           const SizedBox(height: 16),
+          // Notes is the first field, above the phone (client, Oct 17);
+          // custom fields named "Notes" are shown here too.
+          if (c.notes != null && c.notes!.trim().isNotEmpty) ...[
+            _ContactRow(
+              asset: AppAssets.notes,
+              value: c.notes!,
+              maxLines: 8,
+            ),
+            const SizedBox(height: 10),
+          ],
+          for (final f in c.customFields)
+            if (isNotesFieldLabel(f.label) && f.value.trim().isNotEmpty) ...[
+              _CustomFieldRow(label: f.label, value: f.value),
+              const SizedBox(height: 10),
+            ],
           if (c.phone != null && c.phone!.trim().isNotEmpty) ...[
             _ContactRow(
               icon: Icons.phone_rounded,
@@ -1421,14 +1475,6 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
               asset: AppAssets.email,
               value: c.email!,
               onTap: () => _launchUri('mailto:${c.email!.trim()}'),
-            ),
-            const SizedBox(height: 10),
-          ],
-          if (c.notes != null && c.notes!.trim().isNotEmpty) ...[
-            _ContactRow(
-              asset: AppAssets.notes,
-              value: c.notes!,
-              maxLines: 8,
             ),
             const SizedBox(height: 10),
           ],
@@ -1505,7 +1551,9 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
           ],
           // Empty custom fields are not shown on the profile.
           for (final f in c.customFields)
-            if (f.label.trim().isNotEmpty && f.value.trim().isNotEmpty) ...[
+            if (f.label.trim().isNotEmpty &&
+                !isNotesFieldLabel(f.label) &&
+                f.value.trim().isNotEmpty) ...[
               _CustomFieldRow(label: f.label, value: f.value),
               const SizedBox(height: 10),
             ],
@@ -1719,6 +1767,7 @@ class _CustomerPurchases extends ConsumerStatefulWidget {
 /// headers with totals (same SectionHeader as Turnover / Inventory).
 class _CustomerPurchasesState extends ConsumerState<_CustomerPurchases> {
   final Set<String> _collapsed = {};
+  List<Sale>? _lastSales;
 
   void _toggle(String key) => setState(() {
         if (!_collapsed.remove(key)) _collapsed.add(key);
@@ -1737,7 +1786,8 @@ class _CustomerPurchasesState extends ConsumerState<_CustomerPurchases> {
     return FutureBuilder<List<Sale>>(
       future: widget.salesFuture,
       builder: (context, salesSnap) {
-        final sales = [...(salesSnap.data ?? [])].where((s) {
+        if (salesSnap.hasData) _lastSales = salesSnap.data;
+        final sales = [...(salesSnap.data ?? _lastSales ?? [])].where((s) {
           if (from != null) {
             final start = DateTime(from.year, from.month, from.day);
             if (s.createdAt.isBefore(start)) return false;
@@ -1748,7 +1798,8 @@ class _CustomerPurchasesState extends ConsumerState<_CustomerPurchases> {
           }
           return true;
         }).toList();
-        if (salesSnap.connectionState != ConnectionState.done) {
+        if (salesSnap.connectionState != ConnectionState.done &&
+            _lastSales == null) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: AppLoader(),
@@ -1864,4 +1915,15 @@ class _CustomerPurchasesState extends ConsumerState<_CustomerPurchases> {
       },
     );
   }
+}
+
+/// True for custom fields the user labelled as notes ("Notes", "Notiz", ...);
+/// those are ordered together with the built-in Notes field.
+bool isNotesFieldLabel(String label) {
+  final l = label.trim().toLowerCase().replaceAll(RegExp(r'[:.]$'), '');
+  const names = {
+    'note', 'notes', 'notiz', 'notizen', 'bemerkung', 'bemerkungen',
+    'anmerkung', 'anmerkungen', 'nota', 'notas', 'remarks',
+  };
+  return names.contains(l);
 }
