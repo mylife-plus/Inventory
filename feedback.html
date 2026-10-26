@@ -1,0 +1,564 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171b33">
+<title>Feedback Dashboard</title>
+
+<style>
+:root {
+  --bg: #f5f6fa;
+  --surface: #ffffff;
+  --text: #20243a;
+  --muted: #7c8298;
+  --border: #e9eaf2;
+  --purple: #625bf6;
+  --green: #178653;
+  --red: #c85c37;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select { font: inherit; }
+
+button { cursor: pointer; }
+
+.hero {
+  padding: 32px 20px 68px;
+  color: white;
+  background: linear-gradient(140deg, #171b33, #302d65 75%, #625bf6);
+}
+
+.hero-inner, main {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.eyebrow {
+  color: #c3c1ff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 10px 0 7px;
+  font-size: clamp(30px, 8vw, 39px);
+  line-height: 1.15;
+  letter-spacing: -1.4px;
+}
+
+.hero p {
+  margin: 0;
+  color: #d5d6ee;
+  font-size: 14px;
+}
+
+main {
+  padding: 0 16px 38px;
+  margin-top: -43px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.stat {
+  min-width: 0;
+  background: var(--surface);
+  padding: 15px 12px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  box-shadow: 0 5px 18px #171b3308;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.stat-number {
+  margin-top: 5px;
+  font-size: 29px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1.2;
+}
+
+.green { color: var(--green); }
+.red { color: var(--red); }
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 28px 0 13px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: -.5px;
+}
+
+.result-count {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.filters {
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  box-shadow: 0 5px 18px #171b3306;
+}
+
+.search-wrap {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  font-size: 17px;
+}
+
+#search {
+  width: 100%;
+  min-height: 47px;
+  padding: 12px 13px 12px 40px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: #f9f9fc;
+  color: var(--text);
+  font-size: 16px;
+  outline: none;
+}
+
+#search:focus, select:focus {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px #625bf61c;
+}
+
+.filter-label {
+  margin: 16px 0 9px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .9px;
+  text-transform: uppercase;
+}
+
+.chips {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  min-height: 38px;
+  padding: 8px 13px;
+  color: #666c82;
+  background: #f5f5fa;
+  border: 1px solid #ededf4;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 650;
+  transition: .15s ease;
+}
+
+.chip.active {
+  color: white;
+  background: var(--purple);
+  border-color: var(--purple);
+}
+
+.filter-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.sort-wrap { min-width: 0; }
+
+.sort-wrap label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+select {
+  width: 100%;
+  min-height: 43px;
+  padding: 9px 28px 9px 10px;
+  color: var(--text);
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.reset {
+  min-height: 43px;
+  padding: 9px 12px;
+  background: white;
+  color: var(--purple);
+  border: 1px solid #dedcff;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.feedback-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.feedback-card {
+  min-width: 0;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 4px 15px #171b3305;
+  animation: appear .2s ease;
+}
+
+@keyframes appear {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 17px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.badge.improvement {
+  color: #16774b;
+  background: #e5f7ed;
+}
+
+.badge.problem {
+  color: #b94d2b;
+  background: #fff0e8;
+}
+
+.timestamp {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.message-label {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.message {
+  margin: 0;
+  color: #363d53;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.empty {
+  display: none;
+  padding: 35px 20px;
+  text-align: center;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.empty-icon { font-size: 30px; }
+
+.empty h3 {
+  margin: 10px 0 5px;
+  font-size: 17px;
+}
+
+.empty p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+footer {
+  padding: 10px 16px 25px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (min-width: 600px) {
+  .hero { padding: 44px 28px 76px; }
+  main { padding: 0 24px 45px; }
+  .stats { gap: 14px; }
+  .stat { padding: 20px; }
+  .stat-label { font-size: 13px; }
+  .stat-number { font-size: 34px; }
+  .filters { padding: 19px; }
+  .feedback-card { padding: 23px; }
+  .timestamp { font-size: 12px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">Feedback Center</div>
+    <h1>Feedback<span style="color:#aaa5ff">.</span></h1>
+    <p>Listen, learn, and make things better.</p>
+  </div>
+</header>
+
+<main>
+  <section class="stats" aria-label="Feedback summary">
+    <div class="stat">
+      <div class="stat-label">Total feedback</div>
+      <div class="stat-number" id="total">2</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Improvements</div>
+      <div class="stat-number green" id="improvementCount">1</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Problems</div>
+      <div class="stat-number red" id="problemCount">1</div>
+    </div>
+  </section>
+
+  <div class="section-head">
+    <h2>Submissions</h2>
+    <span class="result-count" id="resultCount">Showing 2 of 2</span>
+  </div>
+
+  <section class="filters" aria-label="Filter feedback">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">⌕</span>
+      <input
+        type="search"
+        id="search"
+        placeholder="Search feedback..."
+        aria-label="Search feedback messages"
+        autocomplete="off"
+      >
+    </div>
+
+    <div class="filter-label">Feedback type</div>
+    <div class="chips" role="group" aria-label="Filter by type">
+      <button class="chip active" data-filter="all" aria-pressed="true">All</button>
+      <button class="chip" data-filter="improvement" aria-pressed="false">🛠️ Improvements</button>
+      <button class="chip" data-filter="problem" aria-pressed="false">⚠️ Problems</button>
+    </div>
+
+    <div class="filter-bottom">
+      <div class="sort-wrap">
+        <label for="sort">Sort by</label>
+        <select id="sort">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="az">Message A–Z</option>
+          <option value="za">Message Z–A</option>
+        </select>
+      </div>
+      <button class="reset" id="reset" type="button">Reset filters ↺</button>
+    </div>
+  </section>
+
+  <section class="feedback-list" id="feedbackList" aria-live="polite">
+
+    <article class="feedback-card"
+      data-type="improvement"
+      data-date="2026-10-26T20:13:54"
+      data-message="make this better">
+      <div class="card-top">
+        <span class="badge improvement">🛠️ Improvement</span>
+        <time class="timestamp" datetime="2026-10-26T20:13:54">
+          Oct 26, 2026 · 20:13
+        </time>
+      </div>
+      <div class="message-label">Feedback message</div>
+      <p class="message">make this better</p>
+    </article>
+
+    <article class="feedback-card"
+      data-type="problem"
+      data-date="2026-10-26T20:18:49"
+      data-message="sdf kfj aslkdjflk sadjflkasdj flkjsdalkf jdsalkjf lksadjflkdasj flkasdjflk sadjflk ajsdflkjasd lkfj sadlkfjlkasd jflñkasdj f">
+      <div class="card-top">
+        <span class="badge problem">⚠️ Problem</span>
+        <time class="timestamp" datetime="2026-10-26T20:18:49">
+          Oct 26, 2026 · 20:18
+        </time>
+      </div>
+      <div class="message-label">Feedback message</div>
+      <p class="message">sdf kfj aslkdjflk sadjflkasdj flkjsdalkf jdsalkjf lksadjflkdasj flkasdjflk sadjflk ajsdflkjasd lkfj sadlkfjlkasd jflñkasdj f</p>
+    </article>
+
+  </section>
+
+  <div class="empty" id="empty">
+    <div class="empty-icon">🔎</div>
+    <h3>No feedback found</h3>
+    <p>Try another search or reset your filters.</p>
+  </div>
+</main>
+
+<footer>Feedback Dashboard · Simple insights, better outcomes.</footer>
+
+<script>
+(function () {
+  const search = document.getElementById("search");
+  const sort = document.getElementById("sort");
+  const reset = document.getElementById("reset");
+  const list = document.getElementById("feedbackList");
+  const empty = document.getElementById("empty");
+  const resultCount = document.getElementById("resultCount");
+  const chips = Array.from(document.querySelectorAll(".chip"));
+  const cards = Array.from(document.querySelectorAll(".feedback-card"));
+
+  let activeFilter = "all";
+
+  // Summary counts always reflect all submissions.
+  document.getElementById("total").textContent = cards.length;
+  document.getElementById("improvementCount").textContent =
+    cards.filter(card => card.dataset.type === "improvement").length;
+  document.getElementById("problemCount").textContent =
+    cards.filter(card => card.dataset.type === "problem").length;
+
+  function render() {
+    const query = search.value.trim().toLocaleLowerCase();
+    const direction = sort.value;
+
+    const filtered = cards.filter(card => {
+      const matchesType =
+        activeFilter === "all" || card.dataset.type === activeFilter;
+
+      const matchesSearch =
+        card.dataset.message.toLocaleLowerCase().includes(query) ||
+        card.dataset.type.includes(query) ||
+        card.querySelector("time").textContent.toLocaleLowerCase().includes(query);
+
+      return matchesType && matchesSearch;
+    });
+
+    filtered.sort((a, b) => {
+      if (direction === "newest") {
+        return b.dataset.date.localeCompare(a.dataset.date);
+      }
+      if (direction === "oldest") {
+        return a.dataset.date.localeCompare(b.dataset.date);
+      }
+      if (direction === "az") {
+        return a.dataset.message.localeCompare(b.dataset.message);
+      }
+      return b.dataset.message.localeCompare(a.dataset.message);
+    });
+
+    cards.forEach(card => {
+      card.hidden = true;
+    });
+
+    filtered.forEach(card => {
+      card.hidden = false;
+      list.appendChild(card);
+    });
+
+    resultCount.textContent =
+      "Showing " + filtered.length + " of " + cards.length;
+
+    empty.style.display = filtered.length === 0 ? "block" : "none";
+    list.style.display = filtered.length === 0 ? "none" : "grid";
+  }
+
+  chips.forEach(chip => {
+    chip.addEventListener("click", () => {
+      activeFilter = chip.dataset.filter;
+
+      chips.forEach(item => {
+        const selected = item === chip;
+        item.classList.toggle("active", selected);
+        item.setAttribute("aria-pressed", String(selected));
+      });
+
+      render();
+    });
+  });
+
+  search.addEventListener("input", render);
+  sort.addEventListener("change", render);
+
+  reset.addEventListener("click", () => {
+    search.value = "";
+    sort.value = "newest";
+    activeFilter = "all";
+
+    chips.forEach(chip => {
+      const selected = chip.dataset.filter === "all";
+      chip.classList.toggle("active", selected);
+      chip.setAttribute("aria-pressed", String(selected));
+    });
+
+    render();
+    search.focus();
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>
