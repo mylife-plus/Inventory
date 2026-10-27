@@ -214,11 +214,14 @@
     }
 
     .sort-menu {
-      position: absolute;
-      top: calc(100% + 8px);
-      right: 0;
-      z-index: 100;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 1000;
       width: 190px;
+      max-width: calc(100vw - 24px);
+      max-height: calc(100dvh - 24px);
+      overflow-y: auto;
       padding: 6px;
       background: var(--surface);
       border: 1px solid var(--border);
@@ -838,12 +841,52 @@
 
     /* Sort dropdown */
 
+    function positionSortMenu() {
+      if (!sortMenuOpen) return;
+
+      // Measure the menu while visible, then keep it inside the viewport.
+      const buttonRect = sortBtn.getBoundingClientRect();
+      const menuRect = sortMenu.getBoundingClientRect();
+      const margin = 12;
+      const gap = 8;
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = window.visualViewport
+        ? window.visualViewport.height
+        : window.innerHeight;
+
+      let left = buttonRect.right - menuRect.width;
+      left = Math.max(margin, Math.min(left, viewportWidth - menuRect.width - margin));
+
+      let top = buttonRect.bottom + gap;
+      if (top + menuRect.height > viewportHeight - margin) {
+        top = buttonRect.top - menuRect.height - gap;
+      }
+      top = Math.max(margin, Math.min(top, viewportHeight - menuRect.height - margin));
+
+      sortMenu.style.left = `${left}px`;
+      sortMenu.style.top = `${top}px`;
+    }
+
     function setSortMenuOpen(open) {
       sortMenuOpen = open;
 
       sortMenu.classList.toggle("open", open);
       sortBtn.classList.toggle("active", open);
       sortBtn.setAttribute("aria-expanded", String(open));
+
+      if (open) {
+        requestAnimationFrame(positionSortMenu);
+      } else {
+        sortMenu.style.left = "";
+        sortMenu.style.top = "";
+      }
+    }
+
+    window.addEventListener("resize", positionSortMenu);
+    window.addEventListener("scroll", positionSortMenu, true);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", positionSortMenu);
+      window.visualViewport.addEventListener("scroll", positionSortMenu);
     }
 
     sortBtn.addEventListener("click", event => {
