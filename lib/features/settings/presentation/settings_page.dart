@@ -1,3 +1,4 @@
+import 'package:community_package/community_package.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -125,6 +126,20 @@ class SettingsPage extends ConsumerWidget {
                           title: t('feedback'),
                         );
                       },
+                    ),
+                    _SettingsRow(
+                      // Inter has its own plain ❤, so name the color emoji
+                      // fonts (iOS, then Android) to get the red heart.
+                      leading: const Text(
+                        '❤️',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontFamily: 'Apple Color Emoji',
+                          fontFamilyFallback: ['Noto Color Emoji'],
+                        ),
+                      ),
+                      title: t('community_app'),
+                      onTap: () => CommunityPackage.openCommunity(context),
                     ),
                   ],
                 ),
