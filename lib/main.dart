@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:community_package/community_package.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,12 +9,20 @@ import 'package:inventory_app/core/web/safe_web_focus_binding.dart';
 import 'package:inventory_app/core/web/web_sqlite.dart';
 import 'package:inventory_app/data/reset/app_reset.dart';
 
+/// Backend of the community feedback screens (Settings → Community App).
+const _communityBackendUrl = 'https://community-dev.qureshicreatives.workers.dev';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Web: suppress known debug assert when view-focus runs before Overlay layout.
   installWebFocusAssertFilter();
   // Web: sqflite via wasm/IndexedDB (path_provider docs dir does not exist).
   initWebSqlite();
+
+  // No network work here; the feedback screens load their data when opened.
+  await CommunityPackage.init(
+    const CommunityConfig(backendUrl: _communityBackendUrl, appId: 'inventory'),
+  );
 
   // Inter is bundled in assets/google_fonts/ (same files google_fonts would
   // download), so the app never fetches fonts over the network.

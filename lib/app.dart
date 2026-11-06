@@ -1,3 +1,4 @@
+import 'package:community_package/community_package.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,6 +46,7 @@ class InventoryApp extends ConsumerWidget {
         return prefs.locale;
       },
       localizationsDelegates: const [
+        CommunityLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,

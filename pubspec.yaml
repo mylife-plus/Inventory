@@ -40,6 +40,8 @@ dependencies:
   sqflite_common_ffi_web: ^1.2.0
   cryptography: ^2.9.0
   http: ^1.6.0
+  community_package:
+    path: ../community_package
 
 dev_dependencies:
   flutter_test:
