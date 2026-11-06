@@ -141,6 +141,18 @@ class SettingsPage extends ConsumerWidget {
                       title: t('community_app'),
                       onTap: () => CommunityPackage.openCommunity(context),
                     ),
+                    _SettingsRow(
+                      leading: const Text(
+                        '✍️',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontFamily: 'Apple Color Emoji',
+                          fontFamilyFallback: ['Noto Color Emoji'],
+                        ),
+                      ),
+                      title: t('give_feedback'),
+                      onTap: () => CommunityPackage.openNewFeedback(context),
+                    ),
                   ],
                 ),
               ),
