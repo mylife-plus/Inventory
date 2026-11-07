@@ -12,6 +12,57 @@ import 'package:inventory_app/data/reset/app_reset.dart';
 /// Backend of the community feedback screens (Settings → Community App).
 const _communityBackendUrl = 'https://community-dev.qureshicreatives.workers.dev';
 
+/// Screens for the Problem form's screen picker, in the order a user reaches
+/// them (lib/core/routing/app_router.dart). English names, saved with each
+/// Problem.
+const _communityScreens = [
+  ScreenNode(
+    'Inventory',
+    children: [
+      ScreenNode('New Item'),
+      ScreenNode(
+        'Edit Item',
+        children: [
+          ScreenNode('QR Label', children: [ScreenNode('Print Preview')]),
+        ],
+      ),
+      ScreenNode(
+        'Sell Items',
+        children: [
+          ScreenNode('Add Items'),
+          ScreenNode('QR Scanner'),
+          ScreenNode('Select Customer', children: [ScreenNode('New Customer')]),
+          ScreenNode('Receipt'),
+        ],
+      ),
+    ],
+  ),
+  ScreenNode(
+    'Customers',
+    children: [
+      ScreenNode('New Customer'),
+      ScreenNode(
+        'Customer Details',
+        children: [ScreenNode('Edit Customer'), ScreenNode('Receipt')],
+      ),
+    ],
+  ),
+  ScreenNode('Turnover', children: [ScreenNode('Edit Item')]),
+  ScreenNode(
+    'Settings',
+    children: [
+      ScreenNode('Receipt Details'),
+      ScreenNode(
+        'Receipts',
+        children: [
+          ScreenNode('Receipts of a Year', children: [ScreenNode('Receipt')]),
+        ],
+      ),
+    ],
+  ),
+  ScreenNode('Setup'),
+];
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Web: suppress known debug assert when view-focus runs before Overlay layout.
@@ -21,7 +72,11 @@ Future<void> main() async {
 
   // No network work here; the feedback screens load their data when opened.
   await CommunityPackage.init(
-    const CommunityConfig(backendUrl: _communityBackendUrl, appId: 'inventory'),
+    const CommunityConfig(
+      backendUrl: _communityBackendUrl,
+      appId: 'inventory',
+      screens: _communityScreens,
+    ),
   );
 
   // Inter is bundled in assets/google_fonts/ (same files google_fonts would
