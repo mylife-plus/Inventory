@@ -110,6 +110,7 @@ Future<void> main() async {
     CommunityConfig(
       backendUrl: _communityBackendUrl,
       appId: 'inventory',
+      privacyPolicyUrl: 'https://www.mylife.plus/inventory#h.vth7hdenrad4',
       screens: _communityScreens,
     ),
   );
