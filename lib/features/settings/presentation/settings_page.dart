@@ -23,7 +23,6 @@ import 'package:inventory_app/shared/widgets/currency_picker.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
 import 'package:inventory_app/shared/widgets/scroll_chrome.dart';
-import 'package:inventory_app/core/utils/open_link.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -101,32 +100,6 @@ class SettingsPage extends ConsumerWidget {
               FadeSlide(
                 child: _SettingsGroup(
                   children: [
-                    _SettingsRow(
-                      leading: const Text(
-                        '❤️',
-                        style: TextStyle(
-                          fontSize: 20,
-                          color: Color(0xFFFF3B30),
-                          height: 1,
-                        ),
-                      ),
-                      title: t('community_app'),
-                      onTap: () => context.push('/settings/community'),
-                    ),
-                    _SettingsRow(
-                      leading: const Text(
-                        '✍️',
-                        style: TextStyle(fontSize: 18, height: 1),
-                      ),
-                      title: t('feedback'),
-                      onTap: () async {
-                        await openInAppWebView(
-                          context,
-                          'https://tally.so/r/kbbyKr',
-                          title: t('feedback'),
-                        );
-                      },
-                    ),
                     _SettingsRow(
                       // Inter has its own plain ❤, so name the color emoji
                       // fonts (iOS, then Android) to get the red heart.
