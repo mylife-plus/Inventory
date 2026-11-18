@@ -3,8 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/l10n/s.dart';
+import 'package:inventory_app/core/sync/sync_controller.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/data/backup/app_backup_service.dart';
+import 'package:inventory_app/core/share/share_origin.dart';
+import 'package:inventory_app/core/utils/date_bounds.dart';
+import 'package:inventory_app/data/export/sales_csv_export.dart';
+import 'package:inventory_app/shared/widgets/date_range_fields.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:inventory_app/data/reset/app_reset.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
@@ -13,8 +20,9 @@ import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/currency_picker.dart';
 import 'package:local_auth/local_auth.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
+import 'package:inventory_app/shared/widgets/scroll_chrome.dart';
+import 'package:inventory_app/core/utils/open_link.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -34,45 +42,89 @@ class SettingsPage extends ConsumerWidget {
     final prefs = ref.watch(appPrefsProvider).valueOrNull ?? const AppPrefs();
     final t = ref.watch(tProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const AppIcon(AppAssets.settings, size: 26),
-            const SizedBox(width: 8),
-            Text(
-              t('settings'),
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: p.textPrimary,
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_settings',
+      builder: (context, chrome) {
+        return CustomScrollView(
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => SizedBox(
+                height: kToolbarHeight,
+                child: Row(
+                  children: [
+                    const BackButton(),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const AppIcon(AppAssets.settings, size: 26),
+                          const SizedBox(width: 8),
+                          Text(
+                            t('settings'),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17,
+                              color: p.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 48),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
-      ),
-      body: settings.when(
-        loading: () => const AppLoader(),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (s) {
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 36),
-            children: [
+            ...settings.when(
+                loading: () => const [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: AppLoader(),
+                  ),
+                ],
+                error: (e, _) => [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: Text('$e')),
+                  ),
+                ],
+                data: (s) {
+                  return [SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 36),
+                    sliver: SliverList(
+                    delegate: SliverChildListDelegate([
               FadeSlide(
                 child: _SettingsGroup(
                   children: [
                     _SettingsRow(
-                      leading: const Text('❤️', style: TextStyle(fontSize: 20)),
-                      title: t('open_source'),
-                      onTap: () => launchUrl(
-                        Uri.parse('https://www.gnu.org/licenses/gpl-3.0.html'),
+                      leading: const Text(
+                        '❤️',
+                        style: TextStyle(
+                          fontSize: 20,
+                          color: Color(0xFFFF3B30),
+                          height: 1,
+                        ),
                       ),
+                      title: t('community_app'),
+                      onTap: () => context.push('/settings/community'),
                     ),
                     _SettingsRow(
-                      leading: const Text('🤝', style: TextStyle(fontSize: 20)),
+                      leading: const Text(
+                        '✍️',
+                        style: TextStyle(fontSize: 18, height: 1),
+                      ),
                       title: t('feedback'),
-                      onTap: () =>
-                          launchUrl(Uri.parse('mailto:sales@softthrive.com')),
+                      onTap: () async {
+                        await openInAppWebView(
+                          context,
+                          'https://tally.so/r/kbbyKr',
+                          title: t('feedback'),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -146,25 +198,25 @@ class SettingsPage extends ConsumerWidget {
                               ),
                             );
                             if (!ok) return;
-                          } catch (_) {}
+                          } catch (e) {
+                            debugPrint('Enable PIN auth failed: $e');
+                            return;
+                          }
                         }
                         await ref.read(appPrefsProvider.notifier).setPinLock(v);
                       },
                     ),
                     _SettingsRow(
                       title: t('synced_devices'),
-                      value: '0',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(t('coming_sync'))),
-                        );
-                      },
+                      value: '${ref.watch(syncControllerProvider).activeCount}',
+                      onTap: () => context.push('/settings/sync'),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 20),
-              _SectionHeader(asset: AppAssets.data, label: t('data')),
+              // Client: Data 🗂️ vs invoices/Receipts 📁 (distinct folder emojis).
+              _SectionHeader(emoji: '🗂️', label: t('data')),
               const SizedBox(height: 8),
               FadeSlide(
                 delay: const Duration(milliseconds: 120),
@@ -173,51 +225,17 @@ class SettingsPage extends ConsumerWidget {
                     _SettingsRow(
                       leading: const AppIcon(AppAssets.turnover, size: 26),
                       title: t('export_turnover'),
-                      onTap: () => context.go('/turnover'),
+                      onTap: () => _exportTurnover(context, ref, t),
                     ),
                     _SettingsRow(
-                      leading: Icon(
-                        Icons.receipt_long_rounded,
-                        color: p.textPrimary,
-                        size: 22,
-                      ),
-                      title: t('receipt_details'),
-                      onTap: () => context.push('/settings/receipt'),
-                    ),
-                    _SettingsRow(
-                      leading: Icon(
-                        Icons.qr_code_2_rounded,
-                        color: p.textPrimary,
-                        size: 22,
-                      ),
-                      title: t('qr_link'),
-                      trailing: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.sizeOf(context).width * 0.38,
-                        ),
-                        child: Text(
-                          s.receiptQrLink.trim().isEmpty
-                              ? t('not_set')
-                              : s.receiptQrLink.trim(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: p.textPrimary.withValues(alpha: 0.72),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                      onTap: () => _editQrLink(context, ref, s),
-                    ),
-                    _SettingsRow(
-                      leading: Icon(
-                        Icons.description_rounded,
-                        color: p.textPrimary,
-                        size: 22,
-                      ),
+                      leading: const Text('📁', style: TextStyle(fontSize: 18)),
                       title: t('receipts'),
                       onTap: () => context.push('/receipts'),
+                    ),
+                    _SettingsRow(
+                      leading: const Text('🧾', style: TextStyle(fontSize: 18)),
+                      title: t('receipt_details'),
+                      onTap: () => context.push('/settings/receipt'),
                     ),
                     _SettingsRow(
                       leading: const Text('💾', style: TextStyle(fontSize: 18)),
@@ -237,10 +255,14 @@ class SettingsPage extends ConsumerWidget {
                   ],
                 ),
               ),
-            ],
-          );
-        },
-      ),
+                    ]),
+                    ),
+                  )];
+                },
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -283,63 +305,6 @@ class SettingsPage extends ConsumerWidget {
       AppHaptics.selection();
       await ref.read(appPrefsProvider.notifier).setLocale(code);
     }
-  }
-
-  /// Same stored value as the QR-Link field on the receipt details page.
-  Future<void> _editQrLink(
-    BuildContext context,
-    WidgetRef ref,
-    ShopSettings s,
-  ) async {
-    final t = ref.read(tProvider);
-    final controller = TextEditingController(text: s.receiptQrLink);
-    final result = await showAppSheet<String>(
-      context: context,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(ctx).bottom,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppSheetHeader(title: t('qr_link')),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  child: TextField(
-                    controller: controller,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      labelText: t('qr_link'),
-                      hintText: 'https://…',
-                      helperText: t('receipt_qr_link_helper'),
-                      helperMaxLines: 2,
-                    ),
-                    keyboardType: TextInputType.url,
-                    textInputAction: TextInputAction.done,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-                  ),
-                ),
-                AppSheetActions(
-                  applyLabel: t('done'),
-                  onReset: () => Navigator.pop(ctx, ''),
-                  onApply: () => Navigator.pop(ctx, controller.text.trim()),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    // Not disposed here: the sheet's closing animation may still use it.
-    if (result == null) return;
-    final current = await ref.read(shopRepositoryProvider).get();
-    await ref
-        .read(shopSettingsProvider.notifier)
-        .save(current.copyWith(receiptQrLink: result));
   }
 
   Future<void> _pickCurrency(
@@ -387,24 +352,64 @@ class SettingsPage extends ConsumerWidget {
     );
     if (!ok) return;
 
+    // Pick first (needs user gesture), then block UI only during restore+warm.
+    // withData: true — Chrome/web (and some Android SAF picks) return bytes
+    // with a null path; path-only reads silently no-op there.
+    final chosen = await AppBackupService.pickBackupFile();
+    if (chosen == null) return;
+    String? raw;
     try {
-      final restored = await AppBackupService(
-        ref.read(databaseProvider),
-      ).pickAndRestore();
-      if (!restored) return;
-      ref.invalidate(shopSettingsProvider);
-      ref.invalidate(inventoryItemsProvider);
-      ref.invalidate(categoriesProvider);
-      ref.invalidate(customersProvider);
-      ref.invalidate(salesProvider);
+      raw = await AppBackupService.readPickedBackup(chosen);
+    } catch (_) {
+      raw = null; // not a text file → same message as an empty pick
+    }
+    if (raw == null || raw.isEmpty) {
       if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('backup_failed'))),
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(child: AppLoader()),
+      ),
+    );
+
+    try {
+      // Tables first; photos continue in background so screens fill ASAP.
+      await AppBackupService(ref.read(databaseProvider)).restoreFromJson(
+        raw,
+        awaitPhotos: false,
+      );
+      // Inventory + sales first (Turnover uses sales) — then the rest.
+      await Future.wait([
+        ref.read(inventoryItemsProvider.notifier).refresh(),
+        ref.read(salesProvider.notifier).refresh(),
+        ref.read(categoriesProvider.notifier).refresh(),
+      ]);
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(t('backup_restored'))));
         context.go('/inventory');
       }
+      // Warm remaining providers without blocking navigation.
+      // ignore: unawaited_futures
+      Future.wait([
+        ref.read(customersProvider.notifier).refresh(),
+        ref.read(shopSettingsProvider.notifier).refresh(),
+      ]);
     } catch (e) {
       if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('${t('backup_failed')}: $e')));
@@ -412,23 +417,62 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
+  /// Settings > Export Turnover: pop-up with From / To (default: first →
+  /// last sale), loading wheel while the CSV is written, then share.
+  Future<void> _exportTurnover(
+    BuildContext context,
+    WidgetRef ref,
+    S t,
+  ) async {
+    final sales = await ref.read(saleRepositoryProvider).list();
+    if (!context.mounted) return;
+    final bounds = DateBounds.of(sales.map((s) => s.createdAt));
+    if (bounds == null) {
+      showTopNotice(context, t('export_no_data'));
+      return;
+    }
+    final settings = ref.read(shopSettingsProvider).valueOrNull;
+    final file = await showCsvExportSheet(
+      context: context,
+      title: t('export_turnover'),
+      bounds: bounds,
+      build: (from, to) => SalesCsvExport.write(
+        SalesCsvExport.fileName('Turnover', from, to),
+        SalesCsvExport.turnover(
+          sales: SalesCsvExport.inRange(sales, from, to),
+          decimalSeparator: settings?.decimalSeparator ?? ',',
+          currencySymbol: settings?.currencySymbol ?? '€',
+          t: t.call,
+        ),
+      ),
+    );
+    if (file == null || !context.mounted) return;
+    try {
+      await shareWithOrigin(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'text/csv')],
+          subject: file.uri.pathSegments.last.replaceAll('.csv', ''),
+        ),
+        context,
+      );
+    } catch (e) {
+      debugPrint('Export share failed: $e');
+      if (context.mounted) showTopNotice(context, t('export_failed'));
+    }
+  }
+
+  /// Settings > Reset App: erase business data; keep shop info and settings.
   Future<void> _erase(BuildContext context, WidgetRef ref, S t) async {
     final ok = await showAppConfirmDialog(
       context: context,
-      title: t('erase_all'),
-      message: t('cannot_undo'),
+      title: t('reset_app_title'),
+      message: t('reset_app_body'),
       cancelLabel: t('cancel'),
-      confirmLabel: t('delete'),
+      confirmLabel: t('reset_action'),
       destructive: true,
     );
-    if (!ok) return;
-    await ref.read(dataRepositoryProvider).eraseAll();
-    ref.invalidate(shopSettingsProvider);
-    ref.invalidate(inventoryItemsProvider);
-    ref.invalidate(categoriesProvider);
-    ref.invalidate(customersProvider);
-    ref.invalidate(salesProvider);
-    if (context.mounted) context.go('/inventory');
+    if (!ok || !context.mounted) return;
+    await AppRoot.resetApp(context);
   }
 }
 
@@ -590,14 +634,18 @@ class _SettingsSwitchRow extends StatelessWidget {
               ),
             ),
           ),
-          Switch.adaptive(
-            value: value,
-            // ignore: deprecated_member_use
-            activeColor: const Color(0xFF0A84FF),
-            onChanged: (v) {
-              AppHaptics.selection();
-              onChanged(v);
-            },
+          // Same switch styling as the sort popup.
+          Transform.scale(
+            scale: 0.85,
+            child: Switch.adaptive(
+              value: value,
+              activeTrackColor: p.fabBorder,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (v) {
+                AppHaptics.selection();
+                onChanged(v);
+              },
+            ),
           ),
         ],
       ),
@@ -723,26 +771,42 @@ class _ReceiptDetailsSettingsPageState
       return const Scaffold(body: AppLoader());
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.receipt_long_rounded, size: 18, color: p.textPrimary),
-            const SizedBox(width: 8),
-            Text(t('receipt_details')),
-          ],
-        ),
-      ),
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_receipt_details',
       bottomNavigationBar: ConfirmCancelBar(
         onCancel: () => context.pop(false),
         onConfirm: _save,
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-          children: [
+      builder: (context, chrome) {
+        return Form(
+          key: _formKey,
+          child: CustomScrollView(
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => ScrollChromeAppBar(
+                chrome: chrome,
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.receipt_long_rounded,
+                      size: 18,
+                      color: p.textPrimary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(t('receipt_details')),
+                  ],
+                ),
+              ),
+            ),
+            SliverPadding(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
             Text(
               t('receipt_info_hint'),
               style: TextStyle(
@@ -847,16 +911,21 @@ class _ReceiptDetailsSettingsPageState
                 labelText: t('qr_link'),
                 hintText: 'https://…',
                 helperText: t('receipt_qr_link_helper'),
-                helperMaxLines: 2,
+                // Wraps in full in every language, never "…" (client, Nov 14).
+                helperMaxLines: 8,
               ),
               keyboardType: TextInputType.url,
               textInputAction: TextInputAction.done,
               autocorrect: false,
               enableSuggestions: false,
             ),
+                  ]),
+                ),
+              ),
           ],
         ),
-      ),
+        );
+      },
     );
   }
 }

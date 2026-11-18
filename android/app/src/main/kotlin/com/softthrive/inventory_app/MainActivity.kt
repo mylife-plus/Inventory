@@ -7,13 +7,14 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
-import android.window.OnBackInvokedCallback
-import android.window.OnBackInvokedDispatcher
-import io.flutter.embedding.android.FlutterActivity
+import androidx.activity.OnBackPressedCallback
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+/// FragmentActivity is required by local_auth for the system PIN / biometric prompt.
+/// (FlutterActivity does not expose Fragment APIs that local_auth needs.)
+class MainActivity : FlutterFragmentActivity() {
     private val hapticsChannel = "softthrive.inventory/haptics"
 
     /**
@@ -22,6 +23,12 @@ class MainActivity : FlutterActivity() {
      * the installer and the icon was tapped afterwards) is dropped so the icon
      * always brings the existing window forward instead of opening a second one.
      * Real intents (links, shares) are delivered to the single task as usual.
+     *
+     * System Back on the first screen: send the task to the background instead
+     * of finishing (same intent as the old FlutterActivity.popSystemNavigator
+     * override). FlutterFragment registers its own back callback later and
+     * handles in-app navigation first; when it releases back at the root,
+     * this callback runs.
      */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,41 +37,17 @@ class MainActivity : FlutterActivity() {
             intent.hasCategory(Intent.CATEGORY_LAUNCHER)
         ) {
             finish()
+            return
         }
-    }
 
-    /**
-     * System Back on the app's first screen: keep the app in its one task and
-     * send it to the background (like Android's own launcher apps) instead of
-     * destroying the window, so tapping the icon resumes exactly where the
-     * user was rather than starting the app again.
-     *
-     * Below Android 13 Flutter routes a root Back to [popSystemNavigator].
-     * On 13+ Flutter unregisters its back callback on the first screen and the
-     * system would finish the activity, so a fallback callback is registered
-     * for exactly that state.
-     */
-    override fun popSystemNavigator(): Boolean {
-        moveTaskToBack(true)
-        return true
-    }
-
-    private var rootBackCallback: OnBackInvokedCallback? = null
-
-    override fun setFrameworkHandlesBack(frameworkHandlesBack: Boolean) {
-        super.setFrameworkHandlesBack(frameworkHandlesBack)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        if (frameworkHandlesBack) {
-            rootBackCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
-            rootBackCallback = null
-        } else if (rootBackCallback == null) {
-            val cb = OnBackInvokedCallback { moveTaskToBack(true) }
-            onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
-                cb,
-            )
-            rootBackCallback = cb
-        }
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    moveTaskToBack(true)
+                }
+            },
+        )
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

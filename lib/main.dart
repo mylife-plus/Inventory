@@ -2,13 +2,18 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:inventory_app/app.dart';
 import 'package:inventory_app/core/print/print_service.dart';
+import 'package:inventory_app/core/web/safe_web_focus_binding.dart';
+import 'package:inventory_app/core/web/web_sqlite.dart';
+import 'package:inventory_app/data/reset/app_reset.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Web: suppress known debug assert when view-focus runs before Overlay layout.
+  installWebFocusAssertFilter();
+  // Web: sqflite via wasm/IndexedDB (path_provider docs dir does not exist).
+  initWebSqlite();
 
   // Inter is bundled in assets/google_fonts/ (same files google_fonts would
   // download), so the app never fetches fonts over the network.
@@ -42,5 +47,5 @@ Future<void> main() async {
     ),
   );
 
-  runApp(const ProviderScope(child: InventoryApp()));
+  runApp(const AppRoot());
 }

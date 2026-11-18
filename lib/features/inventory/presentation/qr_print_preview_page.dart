@@ -529,7 +529,7 @@ class QrPerPagePicker extends StatelessWidget {
                   Icon(
                     Icons.arrow_drop_down_rounded,
                     size: 20,
-                    color: p.textSecondary,
+                    color: p.fabBorder,
                   ),
                 ],
               ),

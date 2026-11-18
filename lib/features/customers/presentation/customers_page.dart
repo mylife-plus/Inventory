@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/media/local_image_store.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
+import 'package:inventory_app/core/utils/date_bounds.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
@@ -17,6 +18,8 @@ import 'package:inventory_app/features/receipts/presentation/receipt_page.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
+import 'package:inventory_app/shared/widgets/date_range_fields.dart';
+import 'package:inventory_app/shared/widgets/scroll_chrome.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/local_photo.dart';
@@ -91,12 +94,11 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
 
   Future<void> _loadStats(List<Customer> list) async {
     final repo = ref.read(customerRepositoryProvider);
-    final next = <String, CustomerStats>{};
-    for (final c in list) {
-      next[c.id] = await repo.stats(c.id);
-    }
+    final entries = await Future.wait(
+      list.map((c) async => MapEntry(c.id, await repo.stats(c.id))),
+    );
     if (!mounted) return;
-    setState(() => _stats = next);
+    setState(() => _stats = {for (final e in entries) e.key: e.value});
   }
 
   void _dismissSearch() {
@@ -146,49 +148,77 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
       if (list != null) _loadStats(list);
     });
 
-    return Scaffold(
-      body: GestureDetector(
-        behavior: HitTestBehavior.deferToChild,
-        onTap: _dismissSearch,
-        child: Column(
-          children: [
-            ClientHeader(
-              section: 1,
-              title: t('customers'),
-              titleAsset: AppAssets.customer,
-              onSearch: () => setState(() => _showSearch = !_showSearch),
-              onFilter: _showFilterSheet,
-              onMenu: _showSortSheet,
-              sortActive: _sort != kDefaultCustomerSort,
-              filterActive: _filter.isActive,
-              searchActive: _showSearch || _search.text.trim().isNotEmpty,
-              trailing: Pressable(
-                onTap: () => context.push('/customers/new'),
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Icon(
-                    Icons.add_rounded,
-                    size: 28,
-                    color: AppPalette.of(context).textSecondary,
-                  ),
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_customers',
+      builder: (context, chrome) {
+        return GestureDetector(
+          behavior: HitTestBehavior.deferToChild,
+          onTap: _dismissSearch,
+          child: CustomScrollView(
+            controller: chrome.scrollController,
+            physics: kScrollChromePhysics,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            slivers: [
+              ...ScrollChrome.headerSlivers(
+                context: context,
+              chrome: chrome,
+                header: (_) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ClientHeader(
+                      section: 1,
+                      title: t('customers'),
+                      titleAsset: AppAssets.customer,
+                      includeTopSafeArea: false,
+                      onSearch: () =>
+                          setState(() => _showSearch = !_showSearch),
+                      onFilter: _showFilterSheet,
+                      onMenu: _showSortSheet,
+                      sortActive: _sort != kDefaultCustomerSort,
+                      filterActive: _filter.isActive,
+                      searchActive:
+                          _showSearch || _search.text.trim().isNotEmpty,
+                      trailing: Pressable(
+                        onTap: () => context.push('/customers/new'),
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Icon(
+                            Icons.add_rounded,
+                            size: 28,
+                            color: AppPalette.of(context).textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (_showSearch)
+                      AppSearchField(
+                        controller: _search,
+                        hintText: t('search'),
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        onChanged: (_) => setState(() {}),
+                        onDismiss: () {
+                          if (mounted) {
+                            setState(() => _showSearch = false);
+                          }
+                        },
+                      ),
+                  ],
                 ),
               ),
-            ),
-            if (_showSearch)
-              AppSearchField(
-                controller: _search,
-                hintText: t('search'),
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                onChanged: (_) => setState(() {}),
-                onDismiss: () {
-                  if (mounted) setState(() => _showSearch = false);
-                },
-              ),
-            Expanded(
-              child: customers.when(
-                loading: () => const AppLoader(),
-                error: (e, _) => Center(child: Text('$e')),
+              ...customers.when(
+                loading: () => const [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: AppLoader(),
+                  ),
+                ],
+                error: (e, _) => [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: Text('$e')),
+                  ),
+                ],
                 data: (list) {
                   // Keep stats warm for sort / filter / cards.
                   final key = list.map((c) => c.id).join(',');
@@ -209,36 +239,41 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
                     _stats,
                   );
                   if (filtered.isEmpty) {
-                    return EmptyState(
-                      icon: Icons.people_outline,
-                      title: t('no_customers'),
-                      subtitle: t('add_first_customer'),
-                    );
+                    return [
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: EmptyState(
+                          icon: Icons.people_outline,
+                          title: t('no_customers'),
+                          subtitle: t('add_first_customer'),
+                        ),
+                      ),
+                    ];
                   }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => FadeSlide(
-                      child: CustomerListCard(
-                        name: filtered[i].displayName,
-                        money: money,
-                        stats: _stats[filtered[i].id],
-                        photoPath: filtered[i].photoPath,
-                        contacts: filtered[i].allContacts,
-                        onTap: () =>
-                            context.push('/customers/${filtered[i].id}'),
+                  return [
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                      sliver: SliverList.separated(
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (_, i) => CustomerListCard(
+                          name: filtered[i].displayName,
+                          money: money,
+                          stats: _stats[filtered[i].id],
+                          photoPath: filtered[i].photoPath,
+                          contacts: filtered[i].allContacts,
+                          onTap: () =>
+                              context.push('/customers/${filtered[i].id}'),
+                        ),
                       ),
                     ),
-                  );
+                  ];
                 },
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -477,22 +512,36 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
     if (_loading) {
       return const Scaffold(body: AppLoader());
     }
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.customerId == null ? t('new_customer') : t('edit_customer'),
-        ),
-      ),
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_customer_editor',
       bottomNavigationBar: ConfirmCancelBar(
         onCancel: () => context.pop(),
         onConfirm: _save,
         onDelete: widget.customerId == null ? null : _delete,
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: [
+      builder: (context, chrome) {
+        return Form(
+          key: _formKey,
+          child: CustomScrollView(
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => ScrollChromeAppBar(
+                chrome: chrome,
+                title: Text(
+                  widget.customerId == null
+                      ? t('new_customer')
+                      : t('edit_customer'),
+                ),
+              ),
+            ),
+            SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
             Center(
               child: GestureDetector(
                 onTap: _pickOrClearPhoto,
@@ -582,12 +631,15 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                 labelText: t('notes'),
                 hintText: t('notes_hint'),
                 prefixIcon: _fieldIcon(AppAssets.notes),
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
-              minLines: 1,
-              maxLines: null,
+              maxLines: 1,
+              style: const TextStyle(height: 1.2),
               textAlignVertical: TextAlignVertical.center,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.sentences,
             ),
             for (final entry in _customFields
@@ -601,6 +653,9 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                   // Label always on top (no icon), value typed inside.
                   floatingLabelBehavior: FloatingLabelBehavior.always,
                   hintText: t('field_value'),
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   suffixIcon: IconButton(
                     tooltip: t('delete'),
                     icon: const Icon(Icons.close_rounded),
@@ -611,6 +666,9 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                     },
                   ),
                 ),
+                maxLines: 1,
+                style: const TextStyle(height: 1.2),
+                keyboardType: TextInputType.text,
                 textInputAction: TextInputAction.next,
                 textCapitalization: TextCapitalization.sentences,
               ),
@@ -682,7 +740,10 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                     onTap: () => _pickSocial(btnCtx, t.call, p),
                     decoration: InputDecoration(
                       hintText: t('add_social'),
-                      suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
+                      suffixIcon: Icon(
+                        Icons.arrow_drop_down_rounded,
+                        color: p.fabBorder,
+                      ),
                     ),
                   );
                 },
@@ -725,9 +786,13 @@ class _CustomerEditorPageState extends ConsumerState<CustomerEditorPage> {
                 suffixIcon: const Icon(Icons.add_rounded, size: 26),
               ),
             ),
+                  ]),
+                ),
+              ),
           ],
         ),
-      ),
+        );
+      },
     );
   }
 
@@ -1190,7 +1255,6 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
   DateTime? _to;
   Customer? _customer;
   bool _loadingCustomer = true;
-  final _scroll = ScrollController();
   Future<List<Sale>>? _salesFuture;
   Future<CustomerStats>? _statsFuture;
 
@@ -1203,7 +1267,6 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
   @override
   void dispose() {
     _search.dispose();
-    _scroll.dispose();
     super.dispose();
   }
 
@@ -1270,47 +1333,36 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
     if (picked != null && mounted) setState(() => _sort = picked);
   }
 
+  /// Filter: From / To start at this customer's first / last purchase day;
+  /// calendars bounded by them, To ≥ From + 1 day (client, Nov 11).
   Future<void> _showFilterSheet() async {
-    final t = ref.read(tProvider);
-    var from = _from;
-    var to = _to;
+    final sales = await (_salesFuture ?? Future.value(const <Sale>[]));
+    if (!mounted) return;
+    final bounds = DateBounds.of(sales.map((s) => s.createdAt));
+    if (bounds == null) return;
+    var from = _from ?? bounds.first;
+    var to = _to ?? bounds.last;
     final applied = await showAppSheet<bool>(
       context: context,
       alignTop: true,
       heightFactor: 0.5,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModal) {
-          Future<void> pick(bool isFrom) async {
-            final d = await pickFilterDate(context, isFrom ? from : to);
-            if (d == null) return;
-            setModal(() => isFrom ? from = d : to = d);
-          }
-
           return AppFilterSheet(
             onReset: () {
-              from = null;
-              to = null;
+              from = bounds.first;
+              to = bounds.last;
               Navigator.pop(ctx, true);
             },
             onApply: () => Navigator.pop(ctx, true),
-            child: Row(
-              children: [
-                Expanded(
-                  child: AppFilterDateField(
-                    placeholder: t('from_date'),
-                    value: from,
-                    onTap: () => pick(true),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: AppFilterDateField(
-                    placeholder: t('to_date'),
-                    value: to,
-                    onTap: () => pick(false),
-                  ),
-                ),
-              ],
+            child: BoundedDateRangeFields(
+              bounds: bounds,
+              from: from,
+              to: to,
+              onChanged: (f, t2) => setModal(() {
+                from = f ?? bounds.first;
+                to = t2 ?? bounds.last;
+              }),
             ),
           );
         },
@@ -1318,8 +1370,8 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
     );
     if (applied == true && mounted) {
       setState(() {
-        _from = from;
-        _to = to;
+        _from = bounds.coversAll(from, null) ? null : from;
+        _to = bounds.coversAll(null, to) ? null : to;
       });
     }
   }
@@ -1356,26 +1408,37 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
     );
     final p = AppPalette.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const SizedBox.shrink(),
-        actions: [
-          IconButton(
-            icon: const AppIcon(AppAssets.edit, size: 26),
-            onPressed: () async {
-              await context.push('/customers/edit/$customerId');
-              await _reloadCustomer();
-            },
-          ),
-        ],
-      ),
-      body: ListView(
-        // Same controller + storage key across rebuilds: Done on a receipt
-        // comes back at the exact scroll position (client, Oct 17).
-        key: PageStorageKey<String>('customer-detail-$customerId'),
-        controller: _scroll,
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-        children: [
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_customer_detail',
+      builder: (context, chrome) {
+        return CustomScrollView(
+          // Same storage key across rebuilds: Done on a receipt comes
+          // back at the exact scroll position (client, Oct 17).
+          key: PageStorageKey<String>('customer-detail-$customerId'),
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => ScrollChromeAppBar(
+                chrome: chrome,
+                title: const SizedBox.shrink(),
+                actions: [
+                  IconButton(
+                    icon: const AppIcon(AppAssets.edit, size: 26),
+                    onPressed: () async {
+                      await context.push('/customers/edit/$customerId');
+                      await _reloadCustomer();
+                    },
+                  ),
+                ],
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
           Center(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
@@ -1620,8 +1683,12 @@ class _CustomerDetailPageState extends ConsumerState<CustomerDetailPage> {
               to: _to,
             ),
           ),
-        ],
-      ),
+                ]),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1816,17 +1883,20 @@ class _CustomerPurchasesState extends ConsumerState<_CustomerPurchases> {
           );
         }
 
+        // Highest amount / most recent default descending (reversed=false).
+        if (sort.key == _PurchaseSortKey.amount) {
+          final descending = !sort.reversed;
+          sales.sort((a, b) => descending
+              ? b.total.compareTo(a.total)
+              : a.total.compareTo(b.total));
+        } else {
+          final descending = !sort.reversed;
+          sales.sort((a, b) => descending
+              ? b.createdAt.compareTo(a.createdAt)
+              : a.createdAt.compareTo(b.createdAt));
+        }
         final oldestFirst =
             sort.key == _PurchaseSortKey.recent && sort.reversed;
-        if (sort.key == _PurchaseSortKey.amount) {
-          sales.sort((a, b) => sort.reversed
-              ? a.total.compareTo(b.total)
-              : b.total.compareTo(a.total));
-        } else {
-          sales.sort((a, b) => oldestFirst
-              ? a.createdAt.compareTo(b.createdAt)
-              : b.createdAt.compareTo(a.createdAt));
-        }
 
         // Search: receipt number or any product on the receipt.
         final receipts = sales.where((s) {

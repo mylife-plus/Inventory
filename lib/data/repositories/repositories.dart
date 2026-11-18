@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
 import 'package:inventory_app/data/db/app_database.dart';
@@ -30,10 +31,38 @@ final shopSettingsProvider =
 
 class ShopSettingsNotifier extends AsyncNotifier<ShopSettings> {
   @override
-  Future<ShopSettings> build() => ref.read(shopRepositoryProvider).get();
+  Future<ShopSettings> build() async {
+    try {
+      return await ref.read(shopRepositoryProvider).get();
+    } catch (e, st) {
+      // Chrome/web has no sqflite plugin — keep a usable default so first-run
+      // setup can Continue instead of silently no-oping on null settings.
+      debugPrint('ShopSettings load failed: $e\n$st');
+      return const ShopSettings(companyName: '');
+    }
+  }
+
+  Future<void> refresh() async {
+    try {
+      state = AsyncData(await ref.read(shopRepositoryProvider).get());
+    } catch (e, st) {
+      debugPrint('ShopSettings refresh failed: $e\n$st');
+      state = AsyncData(
+        state.valueOrNull ?? const ShopSettings(companyName: ''),
+      );
+    }
+  }
 
   Future<void> save(ShopSettings settings) async {
-    await ref.read(shopRepositoryProvider).save(settings);
+    try {
+      await ref.read(shopRepositoryProvider).save(settings);
+    } catch (e, st) {
+      debugPrint('ShopSettings save failed: $e\n$st');
+      // Publish UI state anyway so prefs setup can finish when DB is missing.
+      state = AsyncData(settings);
+      if (kIsWeb) return;
+      rethrow;
+    }
     state = AsyncData(settings);
   }
 }
@@ -45,8 +74,25 @@ final categoriesProvider =
 
 class CategoriesNotifier extends AsyncNotifier<List<Category>> {
   @override
-  Future<List<Category>> build() =>
-      ref.read(inventoryRepositoryProvider).listCategories();
+  Future<List<Category>> build() async {
+    try {
+      return await ref.read(inventoryRepositoryProvider).listCategories();
+    } catch (e, st) {
+      debugPrint('Categories load failed: $e\n$st');
+      return const [];
+    }
+  }
+
+  Future<void> refresh() async {
+    try {
+      state = AsyncData(
+        await ref.read(inventoryRepositoryProvider).listCategories(),
+      );
+    } catch (e, st) {
+      debugPrint('Categories refresh failed: $e\n$st');
+      state = const AsyncData([]);
+    }
+  }
 
   Future<Category> getOrCreate(String name) async {
     final cat = await ref
@@ -66,11 +112,22 @@ final inventoryItemsProvider =
 
 class InventoryItemsNotifier extends AsyncNotifier<List<InventoryItem>> {
   @override
-  Future<List<InventoryItem>> build() =>
-      ref.read(inventoryRepositoryProvider).listItems();
+  Future<List<InventoryItem>> build() async {
+    try {
+      return await ref.read(inventoryRepositoryProvider).listItems();
+    } catch (e, st) {
+      debugPrint('Inventory items load failed: $e\n$st');
+      return const [];
+    }
+  }
 
   Future<void> refresh() async {
-    state = AsyncData(await ref.read(inventoryRepositoryProvider).listItems());
+    try {
+      state = AsyncData(await ref.read(inventoryRepositoryProvider).listItems());
+    } catch (e, st) {
+      debugPrint('Inventory items refresh failed: $e\n$st');
+      state = const AsyncData([]);
+    }
   }
 
   Future<void> upsert(InventoryItem item) async {
@@ -91,10 +148,22 @@ final customersProvider =
 
 class CustomersNotifier extends AsyncNotifier<List<Customer>> {
   @override
-  Future<List<Customer>> build() => ref.read(customerRepositoryProvider).list();
+  Future<List<Customer>> build() async {
+    try {
+      return await ref.read(customerRepositoryProvider).list();
+    } catch (e, st) {
+      debugPrint('Customers load failed: $e\n$st');
+      return const [];
+    }
+  }
 
   Future<void> refresh() async {
-    state = AsyncData(await ref.read(customerRepositoryProvider).list());
+    try {
+      state = AsyncData(await ref.read(customerRepositoryProvider).list());
+    } catch (e, st) {
+      debugPrint('Customers refresh failed: $e\n$st');
+      state = const AsyncData([]);
+    }
   }
 
   Future<void> upsert(Customer customer) async {
@@ -114,10 +183,22 @@ final salesProvider = AsyncNotifierProvider<SalesNotifier, List<Sale>>(
 
 class SalesNotifier extends AsyncNotifier<List<Sale>> {
   @override
-  Future<List<Sale>> build() => ref.read(saleRepositoryProvider).list();
+  Future<List<Sale>> build() async {
+    try {
+      return await ref.read(saleRepositoryProvider).list();
+    } catch (e, st) {
+      debugPrint('Sales load failed: $e\n$st');
+      return const [];
+    }
+  }
 
   Future<void> refresh() async {
-    state = AsyncData(await ref.read(saleRepositoryProvider).list());
+    try {
+      state = AsyncData(await ref.read(saleRepositoryProvider).list());
+    } catch (e, st) {
+      debugPrint('Sales refresh failed: $e\n$st');
+      state = const AsyncData([]);
+    }
   }
 
   /// Completes the cart as a sale. When a receipt was undone for editing
@@ -428,41 +509,79 @@ class SaleRepository {
 
   Future<List<Sale>> list() async {
     final db = await _db.database;
+    // Two queries total (not N+1): sales then all lines, group in memory.
     final sales = await db.query('sales', orderBy: 'created_at DESC');
-    final result = <Sale>[];
-    for (final row in sales) {
-      final lines = await db.query(
-        'sale_lines',
-        where: 'sale_id = ?',
-        whereArgs: [row['id']],
+    if (sales.isEmpty) return const [];
+
+    final lineRows = await db.query('sale_lines');
+    final linesBySale = <String, List<SaleLine>>{};
+    for (final l in lineRows) {
+      final saleId = l['sale_id'] as String;
+      (linesBySale[saleId] ??= []).add(
+        SaleLine(
+          itemId: l['item_id'] as String,
+          title: l['title'] as String,
+          unitPrice: (l['unit_price'] as num).toDouble(),
+          quantity: (l['quantity'] as num).toDouble(),
+          unit: l['unit'] as String?,
+        ),
       );
-      result.add(
+    }
+
+    return [
+      for (final row in sales)
         Sale(
           id: row['id'] as String,
           customerId: row['customer_id'] as String?,
           customerName: row['customer_name'] as String?,
           total: (row['total'] as num).toDouble(),
           createdAt: DateTime.parse(row['created_at'] as String),
-          lines: lines
-              .map(
-                (l) => SaleLine(
-                  itemId: l['item_id'] as String,
-                  title: l['title'] as String,
-                  unitPrice: (l['unit_price'] as num).toDouble(),
-                  quantity: (l['quantity'] as num).toDouble(),
-                  unit: l['unit'] as String?,
-                ),
-              )
-              .toList(),
+          lines: linesBySale[row['id'] as String] ?? const [],
         ),
-      );
-    }
-    return result;
+    ];
   }
 
   Future<List<Sale>> listForCustomer(String customerId) async {
-    final all = await list();
-    return all.where((s) => s.customerId == customerId).toList();
+    final db = await _db.database;
+    final sales = await db.query(
+      'sales',
+      where: 'customer_id = ?',
+      whereArgs: [customerId],
+      orderBy: 'created_at DESC',
+    );
+    if (sales.isEmpty) return const [];
+
+    final ids = sales.map((r) => r['id'] as String).toList();
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final lineRows = await db.rawQuery(
+      'SELECT * FROM sale_lines WHERE sale_id IN ($placeholders)',
+      ids,
+    );
+    final linesBySale = <String, List<SaleLine>>{};
+    for (final l in lineRows) {
+      final saleId = l['sale_id'] as String;
+      (linesBySale[saleId] ??= []).add(
+        SaleLine(
+          itemId: l['item_id'] as String,
+          title: l['title'] as String,
+          unitPrice: (l['unit_price'] as num).toDouble(),
+          quantity: (l['quantity'] as num).toDouble(),
+          unit: l['unit'] as String?,
+        ),
+      );
+    }
+
+    return [
+      for (final row in sales)
+        Sale(
+          id: row['id'] as String,
+          customerId: row['customer_id'] as String?,
+          customerName: row['customer_name'] as String?,
+          total: (row['total'] as num).toDouble(),
+          createdAt: DateTime.parse(row['created_at'] as String),
+          lines: linesBySale[row['id'] as String] ?? const [],
+        ),
+    ];
   }
 
   /// [id] / [createdAt] re-use an undone receipt's number and date

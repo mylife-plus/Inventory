@@ -143,6 +143,14 @@ class _SplashPageState extends ConsumerState<SplashPage>
 
     final prefsDone =
         ref.read(appPrefsProvider).valueOrNull?.prefsSetupDone ?? false;
+    // Chrome/web: wait until the navigator overlay has laid out before
+    // routing — otherwise view-focus traversal hits an unlaid-out
+    // `_RenderTheater` (setup TextField / dropdown focus).
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
     // First launch only: language / currency. Later launches → main app.
     context.go(prefsDone ? '/inventory' : '/setup');
   }
@@ -192,68 +200,87 @@ class _SplashPageState extends ConsumerState<SplashPage>
               child: AnimatedBuilder(
                 animation: Listenable.merge([_enter, _pulse]),
                 builder: (context, _) {
-                  return Column(
-                    children: [
-                      const Spacer(flex: 3),
-                      Opacity(
-                        opacity: _logoOpacity.value,
-                        child: Transform.scale(
-                          scale: _logoScale.value,
-                          child: SizedBox(
-                            width: logo,
-                            height: logo,
-                            child: Image.asset(
-                              SplashPage.asset,
-                              fit: BoxFit.contain,
-                              // 1024 px source: decode at display size.
-                              cacheWidth:
-                                  (logo *
-                                          MediaQuery.devicePixelRatioOf(
-                                            context,
-                                          ))
-                                      .round(),
-                              filterQuality: FilterQuality.high,
-                              errorBuilder: (_, _, _) => Icon(
-                                Icons.inventory_2_rounded,
-                                size: logo * 0.45,
-                                color: brandAccent,
+                  // Stack + expand avoids Column+Spacer overflow when a parent
+                  // briefly passes tiny constraints (seen on Flutter web).
+                  return SizedBox.expand(
+                    child: Stack(
+                      children: [
+                        Align(
+                          alignment: const Alignment(0, -0.12),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Opacity(
+                                opacity: _logoOpacity.value,
+                                child: Transform.scale(
+                                  scale: _logoScale.value,
+                                  child: SizedBox(
+                                    width: logo,
+                                    height: logo,
+                                    child: Image.asset(
+                                      SplashPage.asset,
+                                      fit: BoxFit.contain,
+                                      // 1024 px source: decode at display size.
+                                      cacheWidth:
+                                          (logo *
+                                                  MediaQuery.devicePixelRatioOf(
+                                                    context,
+                                                  ))
+                                              .round(),
+                                      filterQuality: FilterQuality.high,
+                                      errorBuilder: (_, _, _) => Icon(
+                                        Icons.inventory_2_rounded,
+                                        size: logo * 0.45,
+                                        color: brandAccent,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 28),
+                              SlideTransition(
+                                position: _titleSlide,
+                                child: FadeTransition(
+                                  opacity: _titleOpacity,
+                                  child: Text(
+                                    name,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 36,
+                                      letterSpacing: -0.9,
+                                      height: 1.05,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 40,
+                          child: FadeTransition(
+                            opacity: _loaderOpacity,
+                            child: Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  color: brandAccent.withValues(alpha: 0.95),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 28),
-                      SlideTransition(
-                        position: _titleSlide,
-                        child: FadeTransition(
-                          opacity: _titleOpacity,
-                          child: Text(
-                            name,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 36,
-                              letterSpacing: -0.9,
-                              height: 1.05,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const Spacer(flex: 4),
-                      FadeTransition(
-                        opacity: _loaderOpacity,
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            color: brandAccent.withValues(alpha: 0.95),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 40),
-                    ],
+                      ],
+                    ),
                   );
                 },
               ),

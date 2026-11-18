@@ -719,9 +719,8 @@ class _SortSheetBodyState<K> extends ConsumerState<_SortSheetBody<K>> {
       o.key: o.key == widget.current.key ? widget.current.reversed : false,
   };
 
-  /// Tapping the option field: the first tap selects the criterion, every
-  /// further tap on the already-selected field flips its direction (same as
-  /// tapping the toggle).
+  /// First tap selects the criterion; tapping the already-selected field
+  /// flips its direction (same as the toggle).
   void _select(K key) {
     AppHaptics.selection();
     setState(() {
@@ -840,19 +839,17 @@ class _SortRow<K> extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 160),
-                  child: Text(
-                    reversed ? option.reversedLabel : option.label,
-                    key: ValueKey(reversed),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      height: 1.2,
-                      color: p.textPrimary,
-                    ),
+                // Plain Text (not AnimatedSwitcher) so the direction label
+                // always matches the toggle (Highest↔Lowest, Recent↔Oldest).
+                child: Text(
+                  reversed ? option.reversedLabel : option.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    height: 1.2,
+                    color: p.textPrimary,
                   ),
                 ),
               ),
@@ -988,7 +985,7 @@ class AppFilterDateField extends StatelessWidget {
                 ),
               ),
             ),
-            Icon(Icons.arrow_drop_down_rounded, size: 22, color: p.textMuted),
+            Icon(Icons.arrow_drop_down_rounded, size: 22, color: p.fabBorder),
           ],
         ),
       ),
@@ -996,7 +993,79 @@ class AppFilterDateField extends StatelessWidget {
   }
 }
 
-/// Category dropdown used by inventory-style filters (only existing ones).
+/// Shared select dropdown (Turnover / Inventory filter + Receipts year/month).
+class AppDropdown extends StatelessWidget {
+  const AppDropdown({
+    super.key,
+    required this.options,
+    required this.value,
+    required this.onChanged,
+    this.nullLabel,
+  });
+
+  /// (id, name) pairs shown in the menu.
+  final List<({String id, String name})> options;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  /// When non-null, adds a leading “all / any” row with `value: null`.
+  final String? nullLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
+    final safeValue = options.any((o) => o.id == value) ? value : null;
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: p.cardElevated,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: p.stroke),
+      ),
+      alignment: Alignment.center,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          isExpanded: true,
+          value: safeValue,
+          hint: nullLabel == null
+              ? null
+              : Text(
+                  nullLabel!,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: p.textMuted,
+                  ),
+                ),
+          icon: Icon(Icons.arrow_drop_down_rounded, color: p.fabBorder),
+          dropdownColor: p.cardElevated,
+          borderRadius: BorderRadius.circular(12),
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: p.textPrimary,
+          ),
+          items: [
+            if (nullLabel != null)
+              DropdownMenuItem<String?>(
+                value: null,
+                child: Text(nullLabel!),
+              ),
+            for (final o in options)
+              DropdownMenuItem<String?>(
+                value: o.id,
+                child: Text(o.name, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+/// Category dropdown used by inventory / Turnover filters (only existing ones).
 class AppCategoryDropdown extends ConsumerWidget {
   const AppCategoryDropdown({
     super.key,
@@ -1012,64 +1081,36 @@ class AppCategoryDropdown extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final p = AppPalette.of(context);
     final t = ref.watch(tProvider);
-    final safeValue =
-        categories.any((c) => c.id == value) ? value : null;
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: p.cardElevated,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: p.stroke),
-      ),
-      alignment: Alignment.center,
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String?>(
-          isExpanded: true,
-          value: safeValue,
-          hint: Text(
-            t('all_categories'),
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: p.textMuted,
-            ),
-          ),
-          icon: Icon(Icons.arrow_drop_down_rounded, color: p.textMuted),
-          dropdownColor: p.cardElevated,
-          borderRadius: BorderRadius.circular(12),
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: p.textPrimary,
-          ),
-          items: [
-            DropdownMenuItem<String?>(
-              value: null,
-              child: Text(t('all_categories')),
-            ),
-            for (final c in categories)
-              DropdownMenuItem<String?>(
-                value: c.id,
-                child: Text(c.name, overflow: TextOverflow.ellipsis),
-              ),
-          ],
-          onChanged: onChanged,
-        ),
-      ),
+    return AppDropdown(
+      options: categories,
+      value: value,
+      onChanged: onChanged,
+      nullLabel: t('all_categories'),
     );
   }
 }
 
 /// Date picker helper shared by filters.
-Future<DateTime?> pickFilterDate(BuildContext context, DateTime? initial) {
+///
+/// Optional [firstDate]/[lastDate] clamp the calendar (e.g. Turnover only
+/// offers days that can contain cashflow).
+Future<DateTime?> pickFilterDate(
+  BuildContext context,
+  DateTime? initial, {
+  DateTime? firstDate,
+  DateTime? lastDate,
+}) {
+  final first = firstDate ?? DateTime(2000);
+  final last = lastDate ?? DateTime.now().add(const Duration(days: 365));
+  var init = initial ?? DateTime.now();
+  if (init.isBefore(first)) init = first;
+  if (init.isAfter(last)) init = last;
   return showDatePicker(
     context: context,
-    initialDate: initial ?? DateTime.now(),
-    firstDate: DateTime(2000),
-    lastDate: DateTime.now().add(const Duration(days: 365)),
+    initialDate: init,
+    firstDate: first,
+    lastDate: last,
     barrierColor: kAppScrim,
   );
 }

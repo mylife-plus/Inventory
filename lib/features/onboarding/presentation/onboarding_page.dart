@@ -198,7 +198,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                                 ),
                               ),
                             ),
-                            Icon(Icons.expand_more_rounded, color: p.textMuted),
+                            Icon(Icons.expand_more_rounded, color: p.fabBorder),
                           ],
                         ),
                       ),

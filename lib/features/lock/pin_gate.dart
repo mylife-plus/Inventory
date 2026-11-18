@@ -15,7 +15,8 @@ class PinGate extends ConsumerStatefulWidget {
 
   final Widget child;
 
-  /// Short trips to other apps / system sheets don't re-lock.
+  /// After this long in background, resume requires PIN again.
+  /// Closing the app (or a cold start) requires PIN immediately.
   static const lockAfter = Duration(seconds: 30);
 
   @override
@@ -27,6 +28,10 @@ class _PinGateState extends ConsumerState<PinGate> with WidgetsBindingObserver {
   bool _checking = false;
   bool _initialCheckDone = false;
   DateTime? _backgroundedAt;
+
+  /// Set when the process is closing (`detached`). Next resume locks
+  /// immediately (no 30s grace). Cold start also locks immediately.
+  bool _closed = true;
 
   bool get _pinEnabled =>
       ref.read(appPrefsProvider).valueOrNull?.pinLock ?? false;
@@ -49,7 +54,10 @@ class _PinGateState extends ConsumerState<PinGate> with WidgetsBindingObserver {
     if (_initialCheckDone || !mounted) return;
     if (!ref.read(appPrefsProvider).hasValue) return;
     _initialCheckDone = true;
+    _closed = false;
     if (_pinEnabled) {
+      // Closed / cold start: require PIN immediately.
+      setState(() => _unlocked = false);
       _maybeUnlock();
     } else {
       setState(() => _unlocked = true);
@@ -64,17 +72,27 @@ class _PinGateState extends ConsumerState<PinGate> with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
         _backgroundedAt ??= DateTime.now();
+        break;
+      case AppLifecycleState.detached:
+        // App is being closed — next open must prompt immediately.
+        _closed = true;
+        break;
       case AppLifecycleState.resumed:
         final since = _backgroundedAt;
+        final wasClosed = _closed;
         _backgroundedAt = null;
-        if (since != null &&
-            _pinEnabled &&
-            DateTime.now().difference(since) >= PinGate.lockAfter) {
+        _closed = false;
+        if (!_pinEnabled) break;
+        final awayLongEnough =
+            since != null &&
+            DateTime.now().difference(since) >= PinGate.lockAfter;
+        // Immediate after close; after 30s when only backgrounded.
+        if (wasClosed || awayLongEnough) {
           setState(() => _unlocked = false);
           _maybeUnlock();
         }
+        break;
       case AppLifecycleState.inactive:
-      case AppLifecycleState.detached:
         break;
     }
   }
@@ -96,8 +114,10 @@ class _PinGateState extends ConsumerState<PinGate> with WidgetsBindingObserver {
         ),
       );
       if (mounted) setState(() => _unlocked = ok);
-    } catch (_) {
-      if (mounted) setState(() => _unlocked = true);
+    } catch (e) {
+      // Stay locked — never silently open the app if the system prompt fails.
+      debugPrint('PinGate auth failed: $e');
+      if (mounted) setState(() => _unlocked = false);
     } finally {
       _backgroundedAt = null;
       if (mounted) setState(() => _checking = false);
@@ -111,11 +131,16 @@ class _PinGateState extends ConsumerState<PinGate> with WidgetsBindingObserver {
         WidgetsBinding.instance.addPostFrameCallback((_) => _initialCheck());
       }
     });
-    final pin = ref.watch(appPrefsProvider).valueOrNull?.pinLock ?? false;
-    final locked = pin && !_unlocked;
+    final prefs = ref.watch(appPrefsProvider);
+    final pin = prefs.valueOrNull?.pinLock ?? false;
+    // Until prefs load on cold start, keep content gated (immediate lock path).
+    final locked = (!_unlocked) && (!prefs.hasValue || pin);
     final t = ref.watch(tProvider);
 
+    // expand: keep the navigator Overlay under tight full-screen constraints
+    // (MaterialApp.builder uses SizedBox.expand for the same reason on web).
     return Stack(
+      fit: StackFit.expand,
       children: [
         // Keep the app (and navigator state) alive under the lock screen.
         ExcludeFocus(

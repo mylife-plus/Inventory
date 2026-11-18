@@ -45,23 +45,26 @@ List<InventoryItem> sortItems(
   final list = [...items];
   int byName(InventoryItem a, InventoryItem b) =>
       a.title.toLowerCase().compareTo(b.title.toLowerCase());
-  int cmp(InventoryItem a, InventoryItem b) {
+  int asc(InventoryItem a, InventoryItem b) {
     switch (sort.key) {
       case ItemSortKey.name:
         return byName(a, b);
       case ItemSortKey.price:
-        // Default direction: highest first.
-        final c = b.price.compareTo(a.price);
+        final c = a.price.compareTo(b.price);
         return c != 0 ? c : byName(a, b);
       case ItemSortKey.stock:
-        final c = b.amount.compareTo(a.amount);
+        final c = a.amount.compareTo(b.amount);
         return c != 0 ? c : byName(a, b);
       case ItemSortKey.recent:
-        return b.updatedAt.compareTo(a.updatedAt);
+        return a.updatedAt.compareTo(b.updatedAt);
     }
   }
 
-  list.sort((a, b) => sort.reversed ? cmp(b, a) : cmp(a, b));
+  // Name A–Z defaults ascending; Highest/Most default descending.
+  final descending = sort.key == ItemSortKey.name
+      ? sort.reversed
+      : !sort.reversed;
+  list.sort((a, b) => descending ? asc(b, a) : asc(a, b));
   return list;
 }
 

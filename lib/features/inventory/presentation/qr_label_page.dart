@@ -14,6 +14,7 @@ import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
+import 'package:inventory_app/shared/widgets/scroll_chrome.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -160,7 +161,10 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     _subtitleCtrl.text = (saved.isEmpty || legacyDefaults.contains(saved))
         ? defaultSubtitle
         : saved;
-    _linkCtrl.text = item.qrLink ?? '';
+    // Empty item link → show shop QR-Label default; a saved override sticks.
+    final shopDefault = (settings?.receiptQrLink ?? '').trim();
+    final itemLink = (item.qrLink ?? '').trim();
+    _linkCtrl.text = itemLink.isNotEmpty ? itemLink : shopDefault;
 
     _loading = false;
     // After the page has slid in (never during the open animation).
@@ -188,7 +192,11 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
 
   String? get _labelLink {
     final v = _linkCtrl.text.trim();
-    return v.isEmpty ? null : v;
+    if (v.isNotEmpty) return v;
+    final shopDefault =
+        (ref.read(shopSettingsProvider).valueOrNull?.receiptQrLink ?? '')
+            .trim();
+    return shopDefault.isEmpty ? null : shopDefault;
   }
 
   /// With a link: link + `#inv=<id>` (phone camera opens the URL, the
@@ -208,7 +216,13 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
     // Empty = "use the default", so defaults follow later title/price edits.
     final qrTitle = _labelTitle == item.title ? '' : _labelTitle;
     final qrSubtitle = _labelSubtitle == _defaultSubtitle ? '' : _labelSubtitle;
-    final qrLink = _linkCtrl.text.trim();
+    final shopDefault =
+        (ref.read(shopSettingsProvider).valueOrNull?.receiptQrLink ?? '')
+            .trim();
+    final entered = _linkCtrl.text.trim();
+    // Store empty when matching shop default so the default can update later;
+    // any other value is a permanent per-item override.
+    final qrLink = (entered.isEmpty || entered == shopDefault) ? '' : entered;
     if ((item.qrTitle ?? '') == qrTitle &&
         (item.qrSubtitle ?? '') == qrSubtitle &&
         (item.qrLink ?? '') == qrLink) {
@@ -347,17 +361,29 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
       return const Scaffold(body: AppLoader());
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(t('qr_label')),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: _done,
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-        children: [
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_qr_label',
+      builder: (context, chrome) {
+        return CustomScrollView(
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => ScrollChromeAppBar(
+                chrome: chrome,
+                title: Text(t('qr_label')),
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: _done,
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
           FadeSlide(
             child: Container(
               decoration: BoxDecoration(
@@ -484,8 +510,12 @@ class _QrLabelPageState extends ConsumerState<QrLabelPage> {
               ),
             ],
           ),
-        ],
-      ),
+                ]),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -1,0 +1,12 @@
+name = "inventory-sync"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "inventory-sync"
+database_id = "85702ca7-eaa6-48dd-9c38-8023f44e0018"
+
+[triggers]
+crons = ["17 3 * * *"]

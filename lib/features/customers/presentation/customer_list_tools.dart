@@ -48,24 +48,31 @@ List<Customer> sortCustomers(
       a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
   // Most recent = last purchase, falling back to when the customer was added.
   DateTime recentOf(Customer c) => stats[c.id]?.lastPurchaseAt ?? c.createdAt;
-  int cmp(Customer a, Customer b) {
+  // Natural ascending compares; default sheet direction (reversed=false) uses
+  // descending for spend / purchases / recent via the apply line below.
+  int asc(Customer a, Customer b) {
     switch (sort.key) {
       case CustomerSortKey.name:
         return byName(a, b);
       case CustomerSortKey.spent:
-        final c = (stats[b.id]?.totalSpent ?? 0)
-            .compareTo(stats[a.id]?.totalSpent ?? 0);
+        final c = (stats[a.id]?.totalSpent ?? 0)
+            .compareTo(stats[b.id]?.totalSpent ?? 0);
         return c != 0 ? c : byName(a, b);
       case CustomerSortKey.purchases:
-        final c = (stats[b.id]?.purchaseCount ?? 0)
-            .compareTo(stats[a.id]?.purchaseCount ?? 0);
+        final c = (stats[a.id]?.purchaseCount ?? 0)
+            .compareTo(stats[b.id]?.purchaseCount ?? 0);
         return c != 0 ? c : byName(a, b);
       case CustomerSortKey.recent:
-        return recentOf(b).compareTo(recentOf(a));
+        return recentOf(a).compareTo(recentOf(b));
     }
   }
 
-  return [...list]..sort((a, b) => sort.reversed ? cmp(b, a) : cmp(a, b));
+  // Name A–Z defaults ascending; Highest/Most/Newest default descending.
+  final descending = sort.key == CustomerSortKey.name
+      ? sort.reversed
+      : !sort.reversed;
+  return [...list]
+    ..sort((a, b) => descending ? asc(b, a) : asc(a, b));
 }
 
 enum ContactKind { phone, email, whatsapp, facebook, instagram, linkedin, telegram }
@@ -410,7 +417,7 @@ class _FilterDropdownField extends StatelessWidget {
               ),
               Icon(
                 Icons.arrow_drop_down_rounded,
-                color: enabled ? p.textSecondary : p.textMuted,
+                color: enabled ? p.fabBorder : p.textMuted,
               ),
             ],
           ),

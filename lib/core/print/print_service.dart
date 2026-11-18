@@ -98,6 +98,15 @@ class PrintService {
 
   /// Warm the font cache (e.g. when the label screen opens) so the first
   /// print opens instantly.
+  /// Forget cached label / sheet bytes (Reset App).
+  static void clearCaches() {
+    _labelPdfKey = null;
+    _labelPdfBytes = null;
+    _labelPngKey = null;
+    _labelPngBytes = null;
+    _sheetCache.clear();
+  }
+
   static Future<void> preload() async {
     try {
       await _fontBytes();

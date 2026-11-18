@@ -5,6 +5,7 @@ import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/l10n/s.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
+import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/currency_picker.dart';
 
@@ -30,12 +31,14 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
   static const _labelGap = 8.0;
 
   late final TextEditingController _company;
+  late final FocusNode _companyFocus;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _company = TextEditingController();
+    _companyFocus = FocusNode(debugLabel: 'prefs_setup_company');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final name =
           ref.read(shopSettingsProvider).valueOrNull?.companyName.trim();
@@ -47,6 +50,7 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
 
   @override
   void dispose() {
+    _companyFocus.dispose();
     _company.dispose();
     super.dispose();
   }
@@ -62,11 +66,10 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
       return;
     }
 
-    final settings = ref.read(shopSettingsProvider).valueOrNull;
-    if (settings == null) return;
-
     setState(() => _saving = true);
     try {
+      final settings = ref.read(shopSettingsProvider).valueOrNull ??
+          const ShopSettings(companyName: '');
       await ref.read(shopSettingsProvider.notifier).save(
             settings.copyWith(
               companyName: _company.text.trim(),
@@ -89,8 +92,8 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
   }
 
   Future<void> _pickCurrency() async {
-    final settings = ref.read(shopSettingsProvider).valueOrNull;
-    if (settings == null) return;
+    final settings = ref.read(shopSettingsProvider).valueOrNull ??
+        const ShopSettings(companyName: '');
     final picked = await showCurrencyPicker(
       context,
       current: settings.currencySymbol,
@@ -164,7 +167,7 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
               leading,
               const SizedBox(width: 12),
               Expanded(child: Text(value, style: fieldValueStyle)),
-              Icon(Icons.arrow_drop_down_rounded, color: p.textSecondary),
+              Icon(Icons.arrow_drop_down_rounded, color: p.fabBorder),
             ],
           ),
         ),
@@ -208,12 +211,15 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
                 alignment: Alignment.centerLeft,
                 child: TextField(
                   controller: _company,
+                  focusNode: _companyFocus,
                   textAlign: TextAlign.start,
                   textCapitalization: TextCapitalization.words,
                   keyboardType: TextInputType.name,
                   textInputAction: TextInputAction.done,
                   style: fieldValueStyle,
-                  onSubmitted: (_) => _continue(),
+                  // Client: the keyboard ✓ only hides the keyboard; the
+                  // Continue button moves on.
+                  onSubmitted: (_) => _companyFocus.unfocus(),
                   decoration: InputDecoration(
                     isDense: true,
                     isCollapsed: true,
@@ -247,11 +253,12 @@ class _PrefsSetupPageState extends ConsumerState<PrefsSetupPage> {
                   child: DropdownButton<String>(
                     value: locale,
                     isExpanded: true,
+                    focusColor: Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                     dropdownColor: p.cardElevated,
                     icon: Icon(
                       Icons.arrow_drop_down_rounded,
-                      color: p.textSecondary,
+                      color: p.fabBorder,
                     ),
                     style: fieldValueStyle,
                     items: [

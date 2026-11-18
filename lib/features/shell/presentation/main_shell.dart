@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
 
 /// Shell without bottom nav — Figma uses top section icons instead.
-/// Swipes follow the left header icons (not linear tab index).
+/// Swipes move one step along the header icons, like a carousel.
 class MainShell extends StatelessWidget {
   const MainShell({super.key, required this.navigationShell});
 
@@ -11,18 +11,23 @@ class MainShell extends StatelessWidget {
 
   static const _branchCount = 3;
 
-  void _onSwipe(DragEndDetails details) {
-    final v = details.primaryVelocity ?? 0;
-    if (v.abs() < 280) return;
+  /// Branch a horizontal swipe lands on, or null (too slow).
+  ///
+  /// The header shows `[previous, next, CURRENT title]` (ClientHeader). A
+  /// left→right swipe (v > 0) pulls in the icon right next to the title
+  /// (`(i+1)%3`), right→left the outer one (`(i+2)%3`). E.g. on Customers
+  /// (📦 💸 👤) left→right opens Cashflow, whose header is then 👤 📦 💸.
+  static int? swipeTarget(int current, double velocity) {
+    if (velocity.abs() < 280) return null;
+    return velocity > 0
+        ? (current + 1) % _branchCount
+        : (current + 2) % _branchCount;
+  }
 
+  void _onSwipe(DragEndDetails details) {
     final i = navigationShell.currentIndex;
-    // Match ClientHeader left icons: [(i+2)%3, (i+1)%3]
-    // Inventory home → left icon = turnover, next = customers.
-    // Swipe left→right (v > 0) → first left icon; right→left → second.
-    final leftFirst = (i + 2) % _branchCount;
-    final leftSecond = (i + 1) % _branchCount;
-    final target = v > 0 ? leftFirst : leftSecond;
-    if (target == i) return;
+    final target = swipeTarget(i, details.primaryVelocity ?? 0);
+    if (target == null || target == i) return;
     AppHaptics.selection();
     navigationShell.goBranch(target);
   }

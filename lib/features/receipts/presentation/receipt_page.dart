@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/l10n/s.dart';
 import 'package:inventory_app/core/print/print_service.dart';
@@ -12,7 +13,9 @@ import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/core/utils/contact_launch.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
 import 'package:inventory_app/core/utils/formatters.dart';
-import 'package:inventory_app/data/export/csv_export.dart';
+import 'package:inventory_app/core/utils/date_bounds.dart';
+import 'package:inventory_app/data/export/sales_csv_export.dart';
+import 'package:inventory_app/data/export/xlsx_export.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
 import 'package:inventory_app/data/resale_draft.dart';
 import 'package:inventory_app/domain/models/models.dart';
@@ -22,6 +25,8 @@ import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
+import 'package:inventory_app/shared/widgets/date_range_fields.dart';
+import 'package:inventory_app/shared/widgets/scroll_chrome.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:inventory_app/core/share/share_origin.dart';
@@ -844,7 +849,8 @@ class _ReceiptPageState extends ConsumerState<ReceiptPage> {
   }
 }
 
-/// Year list matching client Settings → Receipts design.
+/// Settings → Receipts: sort/filter/search + year/month SectionHeaders
+/// (same expand/collapse “dropdowns” as Turnover sold list).
 class ReceiptsYearsPage extends ConsumerStatefulWidget {
   const ReceiptsYearsPage({super.key});
 
@@ -852,18 +858,23 @@ class ReceiptsYearsPage extends ConsumerStatefulWidget {
   ConsumerState<ReceiptsYearsPage> createState() => _ReceiptsYearsPageState();
 }
 
-enum _ReceiptYearSortKey { year, receipts }
+enum _ReceiptSortKey { recent, amount }
 
-const _kDefaultYearSort = SortState<_ReceiptYearSortKey>(
-  _ReceiptYearSortKey.year,
-);
+const _kDefaultReceiptSort = SortState<_ReceiptSortKey>(_ReceiptSortKey.recent);
 
 class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
   bool _showSearch = false;
   final _search = TextEditingController();
-  SortState<_ReceiptYearSortKey> _sort = _kDefaultYearSort;
+  SortState<_ReceiptSortKey> _sort = _kDefaultReceiptSort;
   DateTime? _from;
   DateTime? _to;
+
+  /// Collapsed Year ('y2026') / Month ('m2026-10') — same keys as Turnover.
+  final Set<String> _collapsed = {};
+
+  void _toggle(String key) => setState(() {
+        if (!_collapsed.remove(key)) _collapsed.add(key);
+      });
 
   @override
   void dispose() {
@@ -871,71 +882,90 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
     super.dispose();
   }
 
+  /// Download: pop-up with From / To (default: first → last receipt),
+  /// loading wheel while the CSV is written, then the system share sheet.
+  Future<void> _exportReceipts(List<Sale> sales) async {
+    final bounds = DateBounds.of(sales.map((s) => s.createdAt));
+    if (bounds == null) return;
+    final settings = ref.read(shopSettingsProvider).valueOrNull;
+    final t = ref.read(tProvider);
+    final file = await showCsvExportSheet(
+      context: context,
+      title: t('export_receipts'),
+      bounds: bounds,
+      build: (from, to) => SalesCsvExport.write(
+        SalesCsvExport.fileName('Receipts', from, to),
+        SalesCsvExport.receipts(
+          sales: SalesCsvExport.inRange(sales, from, to),
+          decimalSeparator: settings?.decimalSeparator ?? ',',
+          currencySymbol: settings?.currencySymbol ?? '€',
+          t: t.call,
+        ),
+      ),
+    );
+    if (file == null || !mounted) return;
+    await shareWithOrigin(
+      ShareParams(
+        files: [XFile(file.path, mimeType: 'text/csv')],
+        subject: file.uri.pathSegments.last.replaceAll('.csv', ''),
+      ),
+      context,
+    );
+  }
+
   Future<void> _showSortSheet() async {
     final t = ref.read(tProvider);
-    final picked = await showSortSheet<_ReceiptYearSortKey>(
+    final picked = await showSortSheet<_ReceiptSortKey>(
       context: context,
       options: [
         SortOption(
-          key: _ReceiptYearSortKey.year,
+          key: _ReceiptSortKey.recent,
           icon: Icons.schedule_rounded,
-          label: t('sort_newest'),
+          label: t('sort_most_recent'),
           reversedLabel: t('sort_oldest'),
         ),
         SortOption(
-          key: _ReceiptYearSortKey.receipts,
-          icon: Icons.receipt_long_rounded,
-          label: t('sort_most_receipts'),
-          reversedLabel: t('sort_fewest_receipts'),
+          key: _ReceiptSortKey.amount,
+          icon: Icons.payments_rounded,
+          label: t('sort_highest_amount'),
+          reversedLabel: t('sort_lowest_amount'),
         ),
       ],
       current: _sort,
-      defaultState: _kDefaultYearSort,
+      defaultState: _kDefaultReceiptSort,
     );
     if (picked != null && mounted) setState(() => _sort = picked);
   }
 
+  /// Filter: From / To start at the first / last receipt day; calendars
+  /// are bounded by them and To ≥ From + 1 day (client, Nov 11).
   Future<void> _showFilterSheet() async {
-    final t = ref.read(tProvider);
-    var from = _from;
-    var to = _to;
+    final all = ref.read(salesProvider).valueOrNull ?? const <Sale>[];
+    final bounds = DateBounds.of(all.map((s) => s.createdAt));
+    if (bounds == null) return;
+    var from = _from ?? bounds.first;
+    var to = _to ?? bounds.last;
     final applied = await showAppSheet<bool>(
       context: context,
       alignTop: true,
       heightFactor: 0.5,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModal) {
-          Future<void> pick(bool isFrom) async {
-            final d = await pickFilterDate(context, isFrom ? from : to);
-            if (d == null) return;
-            setModal(() => isFrom ? from = d : to = d);
-          }
-
           return AppFilterSheet(
             onReset: () {
-              from = null;
-              to = null;
+              from = bounds.first;
+              to = bounds.last;
               Navigator.pop(ctx, true);
             },
             onApply: () => Navigator.pop(ctx, true),
-            child: Row(
-              children: [
-                Expanded(
-                  child: AppFilterDateField(
-                    placeholder: t('from_date'),
-                    value: from,
-                    onTap: () => pick(true),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: AppFilterDateField(
-                    placeholder: t('to_date'),
-                    value: to,
-                    onTap: () => pick(false),
-                  ),
-                ),
-              ],
+            child: BoundedDateRangeFields(
+              bounds: bounds,
+              from: from,
+              to: to,
+              onChanged: (f, t2) => setModal(() {
+                from = f ?? bounds.first;
+                to = t2 ?? bounds.last;
+              }),
             ),
           );
         },
@@ -943,64 +973,117 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
     );
     if (applied == true && mounted) {
       setState(() {
-        _from = from;
-        _to = to;
+        // The full first → last span is "no filter" (icon not highlighted).
+        _from = bounds.coversAll(from, null) ? null : from;
+        _to = bounds.coversAll(null, to) ? null : to;
       });
     }
   }
 
-  Future<void> _exportReceipts(List<Sale> sales) async {
-    final settings = ref.read(shopSettingsProvider).valueOrNull;
-    await CsvExportService().exportReceipts(
-      context: context,
-      sales: sales,
-      currency: settings?.currencySymbol ?? '€',
-      companyName: settings?.companyName,
-      from: _from,
-      to: _to,
-      t: ref.read(tProvider).call,
-    );
-  }
-
-  List<Sale> _filteredSales(List<Sale> list) {
-    return list.where((s) {
-      final d = s.createdAt;
-      if (_from != null) {
-        final start = DateTime(_from!.year, _from!.month, _from!.day);
-        if (d.isBefore(start)) return false;
-      }
-      if (_to != null) {
-        final end = DateTime(_to!.year, _to!.month, _to!.day, 23, 59, 59, 999);
-        if (d.isAfter(end)) return false;
-      }
-      return true;
-    }).toList();
-  }
-
-  List<MapEntry<int, List<Sale>>> _yearEntries(List<Sale> list) {
-    final byYear = <int, List<Sale>>{};
-    for (final s in list) {
-      byYear.putIfAbsent(s.createdAt.year, () => []).add(s);
+  List<Sale> _visibleSales(List<Sale> list) {
+    var out = List<Sale>.from(list);
+    if (_from != null) {
+      final start = DateTime(_from!.year, _from!.month, _from!.day);
+      out = out.where((s) => !s.createdAt.isBefore(start)).toList();
     }
-    var entries = byYear.entries.toList();
+    if (_to != null) {
+      final end = DateTime(_to!.year, _to!.month, _to!.day, 23, 59, 59, 999);
+      out = out.where((s) => !s.createdAt.isAfter(end)).toList();
+    }
     final q = _search.text.trim().toLowerCase();
     if (q.isNotEmpty) {
-      entries = entries
-          .where(
-            (e) => '${e.key}'.contains(q) || '${e.value.length}'.contains(q),
-          )
-          .toList();
+      out = out.where((s) {
+        final name = (s.customerName ?? '').toLowerCase();
+        final id = s.id.toLowerCase();
+        return name.contains(q) || id.contains(q);
+      }).toList();
     }
-    int cmp(MapEntry<int, List<Sale>> a, MapEntry<int, List<Sale>> b) {
-      if (_sort.key == _ReceiptYearSortKey.receipts) {
-        final c = b.value.length.compareTo(a.value.length);
-        if (c != 0) return c;
-      }
-      return b.key.compareTo(a.key);
+    final descending = !_sort.reversed;
+    if (_sort.key == _ReceiptSortKey.amount) {
+      out.sort((a, b) => descending
+          ? b.total.compareTo(a.total)
+          : a.total.compareTo(b.total));
+    } else {
+      out.sort((a, b) => descending
+          ? b.createdAt.compareTo(a.createdAt)
+          : a.createdAt.compareTo(b.createdAt));
     }
+    return out;
+  }
 
-    entries.sort((a, b) => _sort.reversed ? cmp(b, a) : cmp(a, b));
-    return entries;
+  /// Year → month → receipts, same SectionHeader column as Turnover.
+  List<Widget> _receiptSections(List<Sale> sales, S t, MoneyFormatter money) {
+    final byYear = <int, Map<int, List<Sale>>>{};
+    for (final s in sales) {
+      byYear
+          .putIfAbsent(s.createdAt.year, () => {})
+          .putIfAbsent(s.createdAt.month, () => [])
+          .add(s);
+    }
+    if (byYear.isEmpty) return [];
+
+    final sortedYears = byYear.keys.toList()..sort((a, b) => b.compareTo(a));
+    final out = <Widget>[];
+    for (final year in sortedYears) {
+      final months = byYear[year]!;
+      final yearTotal = months.values
+          .expand((e) => e)
+          .fold<double>(0, (sum, s) => sum + s.total);
+      final yearKey = 'y$year';
+      final yearOpen = !_collapsed.contains(yearKey);
+      out.add(
+        SectionHeader(
+          title: '$year',
+          expanded: yearOpen,
+          onToggle: () => _toggle(yearKey),
+          trailing: Text(
+            money.format(yearTotal),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+              color: AppPalette.of(context).neon,
+            ),
+          ),
+        ),
+      );
+      if (!yearOpen) continue;
+
+      final sortedMonths = months.keys.toList()..sort((a, b) => b.compareTo(a));
+      for (final month in sortedMonths) {
+        final list = months[month]!;
+        final monthTotal =
+            list.fold<double>(0, (sum, s) => sum + s.total);
+        final monthName =
+            DateFormat.MMMM(t.code).format(DateTime(year, month));
+        final monthKey = 'm$year-$month';
+        final monthOpen = !_collapsed.contains(monthKey);
+        out.add(
+          SectionHeader(
+            title: monthName,
+            expanded: monthOpen,
+            onToggle: () => _toggle(monthKey),
+            trailing: Text(
+              money.format(monthTotal),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                color: AppPalette.of(context).neon,
+              ),
+            ),
+          ),
+        );
+        if (!monthOpen) continue;
+        for (final sale in list) {
+          out.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: ReceiptListRow(sale: sale, money: money),
+            ),
+          );
+        }
+      }
+    }
+    return out;
   }
 
   @override
@@ -1008,157 +1091,150 @@ class _ReceiptsYearsPageState extends ConsumerState<ReceiptsYearsPage> {
     final p = AppPalette.of(context);
     final t = ref.watch(tProvider);
     final sales = ref.watch(salesProvider);
+    final settings = ref.watch(shopSettingsProvider).valueOrNull;
+    final money = MoneyFormatter(
+      symbol: settings?.currencySymbol ?? '€',
+      decimalSeparator: settings?.decimalSeparator ?? ',',
+    );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.receipt_long_rounded, size: 18, color: p.textPrimary),
-            const SizedBox(width: 8),
-            Text(t('receipts')),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: t('export_csv'),
-            onPressed: () {
-              final list = sales.valueOrNull;
-              if (list == null || list.isEmpty) return;
-              _exportReceipts(_filteredSales(list));
-            },
-            icon: Icon(Icons.file_download_outlined, color: p.textPrimary),
-          ),
-        ],
-      ),
-      body: sales.when(
-        loading: () => const AppLoader(),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (list) {
-          final filtered = _filteredSales(list);
-          if (list.isEmpty) {
-            return EmptyState(
-              icon: Icons.receipt_long_rounded,
-              title: t('no_receipts'),
-              subtitle: t('no_receipts_sub'),
-            );
-          }
-
-          final years = _yearEntries(filtered);
-
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: ListActionIconsRow(
-                  onSort: _showSortSheet,
-                  onFilter: _showFilterSheet,
-                  onSearch: () => setState(() => _showSearch = !_showSearch),
-                  sortActive: _sort != _kDefaultYearSort,
-                  filterActive: _from != null || _to != null,
-                  searchActive: _showSearch || _search.text.trim().isNotEmpty,
-                ),
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_receipts',
+      builder: (context, chrome) {
+        final listForHeader = sales.valueOrNull;
+        final showTools = listForHeader != null && listForHeader.isNotEmpty;
+        return CustomScrollView(
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: kToolbarHeight,
+                    child: Row(
+                      children: [
+                        const BackButton(),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('📁', style: TextStyle(fontSize: 18)),
+                              const SizedBox(width: 8),
+                              Text(
+                                t('receipts'),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 17,
+                                  color: p.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          key: const ValueKey('receipts_download'),
+                          tooltip: t('export_csv'),
+                          onPressed: () {
+                            final list = sales.valueOrNull;
+                            if (list == null || list.isEmpty) return;
+                            _exportReceipts(list);
+                          },
+                          icon: Icon(
+                            Icons.file_download_outlined,
+                            color: p.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (showTools) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                      child: ListActionIconsRow(
+                        onSort: _showSortSheet,
+                        onFilter: _showFilterSheet,
+                        onSearch: () =>
+                            setState(() => _showSearch = !_showSearch),
+                        sortActive: _sort != _kDefaultReceiptSort,
+                        filterActive: _from != null || _to != null,
+                        searchActive:
+                            _showSearch || _search.text.trim().isNotEmpty,
+                      ),
+                    ),
+                    if (_showSearch)
+                      AppSearchField(
+                        controller: _search,
+                        hintText: t('search'),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        onChanged: (_) => setState(() {}),
+                        onDismiss: () {
+                          if (mounted) {
+                            setState(() => _showSearch = false);
+                          }
+                        },
+                      ),
+                    const SizedBox(height: 4),
+                  ],
+                ],
               ),
-              if (_showSearch)
-                AppSearchField(
-                  controller: _search,
-                  hintText: t('search'),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  onChanged: (_) => setState(() {}),
-                  onDismiss: () {
-                    if (mounted) setState(() => _showSearch = false);
-                  },
+            ),
+            ...sales.when(
+              loading: () => const <Widget>[
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: AppLoader(),
                 ),
-              Expanded(
-                child: years.isEmpty
-                    ? EmptyState(
+              ],
+              error: (e, _) => <Widget>[
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Text('$e')),
+                ),
+              ],
+              data: (list) {
+                if (list.isEmpty) {
+                  return <Widget>[
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: EmptyState(
                         icon: Icons.receipt_long_rounded,
                         title: t('no_receipts'),
                         subtitle: t('no_receipts_sub'),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                        children: [
-                          FadeSlide(
-                            child: AppCard(
-                              padding: EdgeInsets.zero,
-                              child: Column(
-                                children: [
-                                  for (var i = 0; i < years.length; i++) ...[
-                                    Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        onTap: () => context.push(
-                                          '/receipts/year/${years[i].key}',
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 16,
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Text(
-                                                '${years[i].key}',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 17,
-                                                  color: p.textPrimary,
-                                                ),
-                                              ),
-                                              const Spacer(),
-                                              Icon(
-                                                Icons.receipt_long_rounded,
-                                                size: 18,
-                                                color: p.textSecondary,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                t(
-                                                  years[i].value.length == 1
-                                                      ? 'year_receipts_one'
-                                                      : 'year_receipts',
-                                                ).replaceAll(
-                                                  '{count}',
-                                                  '${years[i].value.length}',
-                                                ),
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w700,
-                                                  color: p.textPrimary
-                                                      .withValues(alpha: 0.85),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Icon(
-                                                Icons.chevron_right_rounded,
-                                                color: p.textPrimary.withValues(
-                                                  alpha: 0.55,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    if (i < years.length - 1)
-                                      Divider(
-                                        height: 1,
-                                        indent: 16,
-                                        endIndent: 16,
-                                        color: p.stroke,
-                                      ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
-              ),
-            ],
-          );
-        },
-      ),
+                    ),
+                  ];
+                }
+                final visible = _visibleSales(list);
+                final sections = _receiptSections(visible, t, money);
+                if (sections.isEmpty) {
+                  return <Widget>[
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: EmptyState(
+                        icon: Icons.receipt_long_rounded,
+                        title: t('no_receipts'),
+                        subtitle: t('no_receipts_sub'),
+                      ),
+                    ),
+                  ];
+                }
+                return <Widget>[
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate(sections),
+                    ),
+                  ),
+                ];
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1180,64 +1256,103 @@ class ReceiptsYearPage extends ConsumerWidget {
     );
 
     Future<void> exportYear(List<Sale> yearSales) async {
-      await CsvExportService().exportReceipts(
+      // Same single .xlsx export as Settings > Export Turnover.
+      final t = ref.read(tProvider);
+      await TurnoverXlsxExport.exportAndShare(
         context: context,
-        sales: yearSales,
-        currency: settings?.currencySymbol ?? '€',
-        companyName: settings?.companyName,
+        allSales: yearSales,
         from: DateTime(year, 1, 1),
-        to: DateTime(year, 12, 31, 23, 59, 59),
-        t: ref.read(tProvider).call,
+        to: DateTime(year, 12, 31, 23, 59, 59, 999),
+        companyName: settings?.companyName ?? '',
+        currencySymbol: settings?.currencySymbol ?? '€',
+        locale: t.code,
+        t: t.call,
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('$year'),
-        actions: [
-          IconButton(
-            tooltip: t('export_csv'),
-            onPressed: () {
-              final list = sales.valueOrNull;
-              if (list == null) return;
-              final yearSales = list
-                  .where((s) => s.createdAt.year == year)
-                  .toList();
-              if (yearSales.isEmpty) return;
-              exportYear(yearSales);
-            },
-            icon: Icon(Icons.file_download_outlined, color: p.textPrimary),
-          ),
-        ],
-      ),
-      body: sales.when(
-        loading: () => const AppLoader(),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (list) {
-          final yearSales = list
-              .where((s) => s.createdAt.year == year)
-              .toList();
-          if (yearSales.isEmpty) {
-            return EmptyState(
-              icon: Icons.receipt_long_rounded,
-              title: t('no_receipts'),
-              subtitle: t('no_receipts_sub'),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-            itemCount: yearSales.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (_, i) {
-              final sale = yearSales[i];
-              return FadeSlide(
-                delay: Duration(milliseconds: 30 * i),
-                child: ReceiptListRow(sale: sale, money: money),
-              );
-            },
-          );
-        },
-      ),
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_receipts_year',
+      builder: (context, chrome) {
+        return CustomScrollView(
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => ScrollChromeAppBar(
+                chrome: chrome,
+                title: Text('$year'),
+                actions: [
+                  IconButton(
+                    tooltip: t('export_excel'),
+                    onPressed: () {
+                      final list = sales.valueOrNull;
+                      if (list == null) return;
+                      final yearSales = list
+                          .where((s) => s.createdAt.year == year)
+                          .toList();
+                      if (yearSales.isEmpty) return;
+                      exportYear(yearSales);
+                    },
+                    icon: Icon(
+                      Icons.file_download_outlined,
+                      color: p.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ...sales.when(
+              loading: () => const <Widget>[
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: AppLoader(),
+                ),
+              ],
+              error: (e, _) => <Widget>[
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Text('$e')),
+                ),
+              ],
+              data: (list) {
+                final yearSales = list
+                    .where((s) => s.createdAt.year == year)
+                    .toList();
+                if (yearSales.isEmpty) {
+                  return <Widget>[
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: EmptyState(
+                        icon: Icons.receipt_long_rounded,
+                        title: t('no_receipts'),
+                        subtitle: t('no_receipts_sub'),
+                      ),
+                    ),
+                  ];
+                }
+                return <Widget>[
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                    sliver: SliverList.separated(
+                      itemCount: yearSales.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (_, i) {
+                        final sale = yearSales[i];
+                        return FadeSlide(
+                          delay: Duration(milliseconds: 30 * i),
+                          child: ReceiptListRow(sale: sale, money: money),
+                        );
+                      },
+                    ),
+                  ),
+                ];
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }

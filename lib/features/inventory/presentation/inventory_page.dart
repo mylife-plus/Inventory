@@ -11,6 +11,7 @@ import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
+import 'package:inventory_app/shared/widgets/scroll_chrome.dart';
 
 class InventoryPage extends ConsumerStatefulWidget {
   const InventoryPage({super.key});
@@ -93,38 +94,64 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
       }
     }
 
-    return Scaffold(
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: SquareFab(
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_inventory',
+      primaryFab: SquareFab(
         onPressed: () => context.push('/inventory/item'),
       ),
-      body: Column(
-        children: [
-          ClientHeader(
-            section: 0,
-            title: t('inventory'),
-            titleAsset: AppAssets.inventory,
-            showSell: true,
-            onSearch: () => setState(() => _showSearch = !_showSearch),
-            onFilter: _showFilterSheet,
-            onMenu: _showSortSheet,
-            sortActive: _sort != kDefaultItemSort,
-            filterActive: _categoryFilter != null,
-            searchActive: _showSearch || _search.text.trim().isNotEmpty,
-          ),
-          if (_showSearch)
-            AppSearchField(
-              controller: _search,
-              hintText: t('search'),
-              onChanged: (_) => setState(() {}),
-              onDismiss: () {
-                if (mounted) setState(() => _showSearch = false);
-              },
+      builder: (context, chrome) {
+        return CustomScrollView(
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ClientHeader(
+                    section: 0,
+                    title: t('inventory'),
+                    titleAsset: AppAssets.inventory,
+                    showSell: true,
+                    includeTopSafeArea: false,
+                    onSearch: () =>
+                        setState(() => _showSearch = !_showSearch),
+                    onFilter: _showFilterSheet,
+                    onMenu: _showSortSheet,
+                    sortActive: _sort != kDefaultItemSort,
+                    filterActive: _categoryFilter != null,
+                    searchActive:
+                        _showSearch || _search.text.trim().isNotEmpty,
+                  ),
+                  if (_showSearch)
+                    AppSearchField(
+                      controller: _search,
+                      hintText: t('search'),
+                      onChanged: (_) => setState(() {}),
+                      onDismiss: () {
+                        if (mounted) {
+                          setState(() => _showSearch = false);
+                        }
+                      },
+                    ),
+                ],
+              ),
             ),
-          Expanded(
-            child: itemsAsync.when(
-              loading: () => const AppLoader(),
-              error: (e, _) => Center(child: Text('$e')),
+            ...itemsAsync.when(
+              loading: () => [
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: AppLoader(),
+                ),
+              ],
+              error: (e, _) => [
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Text('$e')),
+                ),
+              ],
               data: (items) {
                 final t = ref.read(tProvider);
                 final q = _search.text.trim().toLowerCase();
@@ -142,11 +169,16 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
                 );
 
                 if (filtered.isEmpty) {
-                  return EmptyState(
-                    icon: Icons.inventory_2_outlined,
-                    title: t('no_items'),
-                    subtitle: t('add_first_item'),
-                  );
+                  return [
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: EmptyState(
+                        icon: Icons.inventory_2_outlined,
+                        title: t('no_items'),
+                        subtitle: t('add_first_item'),
+                      ),
+                    ),
+                  ];
                 }
 
                 final grouped = <String, List<InventoryItem>>{};
@@ -169,58 +201,67 @@ class _InventoryPageState extends ConsumerState<InventoryPage> {
                 final grandTotal =
                     categoryTotal.values.fold<double>(0, (s, v) => s + v);
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                  children: [
-                    TotalLine(
-                        label: t('total'), value: money.format(grandTotal)),
-                    ...sortedEntries.expand((entry) {
-                      final open = !_collapsed.contains(entry.key);
-                      return [
-                        SectionHeader(
-                          title: entry.key,
-                          expanded: open,
-                          onToggle: () => setState(() {
-                            if (open) {
-                              _collapsed.add(entry.key);
-                            } else {
-                              _collapsed.remove(entry.key);
-                            }
-                          }),
-                          trailing: Text(
-                            money.format(categoryTotal[entry.key] ?? 0),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w500,
-                              fontSize: 16,
-                              height: 1.15,
-                              color: p.textPrimary.withValues(alpha: 0.92),
-                            ),
+                final rows = <Widget>[
+                  TotalLine(
+                      label: t('total'), value: money.format(grandTotal)),
+                ];
+                for (final entry in sortedEntries) {
+                  final open = !_collapsed.contains(entry.key);
+                  rows.add(
+                    SectionHeader(
+                      title: entry.key,
+                      expanded: open,
+                      onToggle: () => setState(() {
+                        if (open) {
+                          _collapsed.add(entry.key);
+                        } else {
+                          _collapsed.remove(entry.key);
+                        }
+                      }),
+                      trailing: Text(
+                        money.format(categoryTotal[entry.key] ?? 0),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 16,
+                          height: 1.15,
+                          color: p.textPrimary.withValues(alpha: 0.92),
+                        ),
+                      ),
+                    ),
+                  );
+                  if (open) {
+                    for (final item in entry.value) {
+                      rows.add(
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _InventoryCard(
+                            item: item,
+                            money: money,
+                            onTap: () =>
+                                context.push('/inventory/item/${item.id}'),
                           ),
                         ),
-                        if (open)
-                          ...entry.value.asMap().entries.map(
-                            (e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: FadeSlide(
-                                delay: Duration(milliseconds: 30 * e.key),
-                                child: _InventoryCard(
-                                  item: e.value,
-                                  money: money,
-                                  onTap: () => context
-                                      .push('/inventory/item/${e.value.id}'),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ];
-                    }),
-                  ],
-                );
+                      );
+                    }
+                  }
+                }
+
+                return [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (_, i) => rows[i],
+                        childCount: rows.length,
+                      ),
+                    ),
+                  ),
+                ];
               },
             ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 }

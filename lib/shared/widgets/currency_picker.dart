@@ -4,6 +4,7 @@ import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/currency/currencies.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/data/repositories/repositories.dart';
+import 'package:inventory_app/domain/models/models.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
@@ -27,8 +28,12 @@ Future<String?> showCurrencyPicker(
 }
 
 Future<void> pickAndSaveCurrency(BuildContext context, WidgetRef ref) async {
-  final settings = ref.read(shopSettingsProvider).valueOrNull;
-  if (settings == null) return;
+  // Await load — valueOrNull is null while settings are still resolving,
+  // which previously made Year/Month/Day average taps do nothing.
+  final existing = ref.read(shopSettingsProvider).valueOrNull;
+  final ShopSettings settings =
+      existing ?? await ref.read(shopSettingsProvider.future);
+  if (!context.mounted) return;
   final picked = await showCurrencyPicker(
     context,
     current: settings.currencySymbol,
@@ -170,8 +175,8 @@ Future<void> pickAndSaveDecimalSeparator(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  final settings = ref.read(shopSettingsProvider).valueOrNull;
-  if (settings == null) return;
+  final settings = ref.read(shopSettingsProvider).valueOrNull ??
+      const ShopSettings(companyName: '');
   final picked = await showDecimalSeparatorPicker(
     context,
     current: settings.decimalSeparator,

@@ -34,6 +34,13 @@ class AppPrefs {
   Locale get locale => Locale(localeCode);
 }
 
+/// The phone's language when the app supports it, else English.
+String deviceLocaleCode() {
+  final code =
+      WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+  return S.supported.containsKey(code) ? code : 'en';
+}
+
 final sharedPrefsProvider = FutureProvider<SharedPreferences>((ref) {
   return SharedPreferences.getInstance();
 });
@@ -56,7 +63,8 @@ class AppPrefsNotifier extends AsyncNotifier<AppPrefs> {
   @override
   Future<AppPrefs> build() async {
     final prefs = await SharedPreferences.getInstance();
-    final code = prefs.getString(_kLocale) ?? 'en';
+    // No language chosen yet: the phone's language (English fallback).
+    final code = prefs.getString(_kLocale) ?? deviceLocaleCode();
     return AppPrefs(
       localeCode: S.supported.containsKey(code) ? code : 'en',
       darkMode: prefs.getBool(_kDark) ?? true,

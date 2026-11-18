@@ -15,6 +15,7 @@ import 'package:inventory_app/shared/widgets/app_widgets.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/currency_picker.dart';
+import 'package:inventory_app/shared/widgets/scroll_chrome.dart';
 
 class ItemEditorPage extends ConsumerStatefulWidget {
   const ItemEditorPage({super.key, this.itemId});
@@ -280,20 +281,34 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
 
     const fieldGap = 14.0;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_existingId == null ? t('new_item') : t('edit_item')),
-      ),
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_item_editor',
       bottomNavigationBar: ConfirmCancelBar(
         onCancel: () => context.pop(),
         onConfirm: _saving ? () {} : _save,
         onDelete: _existingId == null ? null : _delete,
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          children: [
+      builder: (context, chrome) {
+        return Form(
+          key: _formKey,
+          child: CustomScrollView(
+            controller: chrome.scrollController,
+            physics: kScrollChromePhysics,
+            slivers: [
+              ...ScrollChrome.headerSlivers(
+                context: context,
+              chrome: chrome,
+                header: (_) => ScrollChromeAppBar(
+                  chrome: chrome,
+                  title: Text(
+                    _existingId == null ? t('new_item') : t('edit_item'),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
             Center(
               child: GestureDetector(
                 onTap: _pickPhoto,
@@ -382,9 +397,15 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
                       decoration: InputDecoration(
                         labelText: t('category'),
                         hintText: t('search_or_create'),
-                        suffixIcon: Icon(
-                          Icons.arrow_drop_down_rounded,
-                          color: p.textSecondary,
+                        // Blue while the list is closed (client, Nov 14).
+                        suffixIcon: ListenableBuilder(
+                          listenable: focus,
+                          builder: (_, _) => Icon(
+                            Icons.arrow_drop_down_rounded,
+                            color: focus.hasFocus
+                                ? p.textSecondary
+                                : p.fabBorder,
+                          ),
                         ),
                       ),
                     );
@@ -661,9 +682,13 @@ class _ItemEditorPageState extends ConsumerState<ItemEditorPage> {
                 ),
               ),
             ],
-          ],
-        ),
-      ),
+                  ]),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

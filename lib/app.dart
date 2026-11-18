@@ -5,6 +5,7 @@ import 'package:inventory_app/core/l10n/app_prefs.dart';
 import 'package:inventory_app/core/l10n/s.dart';
 import 'package:inventory_app/core/notifications/in_app_notifications.dart';
 import 'package:inventory_app/core/routing/app_router.dart';
+import 'package:inventory_app/core/sync/sync_controller.dart';
 import 'package:inventory_app/core/theme/app_theme.dart';
 import 'package:inventory_app/data/resale_draft.dart';
 import 'package:inventory_app/features/sell/presentation/sell_page.dart';
@@ -21,6 +22,10 @@ class InventoryApp extends ConsumerWidget {
     // Receipt Edit → Continue (undone sale being re-done): a draft saved
     // before the app was closed refills the empty cart + customer, and cart
     // changes are saved so they survive leaving / killing the app.
+    // Device sync runs in the background once a device is paired (no-op,
+    // no network, until then). listen = keep alive without rebuilding.
+    ref.listen(syncControllerProvider, (_, _) {});
+
     ref.listen(cartProvider, (_, next) {
       if (next.isNotEmpty) {
         ref.read(resaleDraftProvider.notifier).updateLines(next);
@@ -49,12 +54,16 @@ class InventoryApp extends ConsumerWidget {
         final mq = MediaQuery.of(context);
         // Keep layout stable on Android when system font size is huge.
         final scale = mq.textScaler.scale(1).clamp(0.90, 1.12);
-        return MediaQuery(
-          data: mq.copyWith(textScaler: TextScaler.linear(scale)),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-            child: PinGate(child: child ?? const SizedBox.shrink()),
+        // Expand so the navigator Overlay always receives tight constraints
+        // (helps avoid unlaid-out `_RenderTheater` on Chrome view-focus).
+        return SizedBox.expand(
+          child: MediaQuery(
+            data: mq.copyWith(textScaler: TextScaler.linear(scale)),
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              child: PinGate(child: child ?? const SizedBox.shrink()),
+            ),
           ),
         );
       },

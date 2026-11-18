@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:inventory_app/core/sync/sync_store.dart';
 import 'package:sqflite/sqflite.dart';
 
 class AppDatabase {
@@ -14,16 +16,55 @@ class AppDatabase {
     return _db!;
   }
 
+  /// Closes the connection (Reset App deletes the file afterwards); the
+  /// next [database] call opens a fresh one.
+  Future<void> close() async {
+    final db = _db;
+    _db = null;
+    if (db != null && db.isOpen) await db.close();
+  }
+
   Future<Database> _open() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'inventory_app.db');
+    // Web (ffi_web): plain name in IndexedDB. Native: documents directory.
+    final path = kIsWeb
+        ? 'inventory_app.db'
+        : p.join(
+            (await getApplicationDocumentsDirectory()).path,
+            'inventory_app.db',
+          );
     return openDatabase(
       path,
       version: 8,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
-      onCreate: (db, version) async {
+      onCreate: (db, version) => createSchema(db),
+      onUpgrade: (db, oldVersion, newVersion) async {
+        await _ensureShopSettingsColumns(db);
+        await _ensureCustomerColumns(db);
+        await _ensureInventoryItemColumns(db);
+        if (oldVersion < 8) {
+          // Old installs defaulted to TND; Euro is the first-launch default.
+          await db.update('shop_settings', {
+            'currency_symbol': '€',
+          }, where: "currency_symbol = 'TND'");
+        }
+      },
+      onOpen: (db) async {
+        // Repair schemas when version jumped without applying ALTERs.
+        await _ensureShopSettingsColumns(db);
+        await _ensureCustomerColumns(db);
+        await _ensureInventoryItemColumns(db);
+        await _relinkOrphanedSales(db);
+        // Device sync bookkeeping (local-only tables, idempotent).
+        await ensureSyncTables(db);
+      },
+    );
+  }
+
+  /// Fresh-install schema (also used by tests).
+  @visibleForTesting
+  static Future<void> createSchema(Database db) async {
         await db.execute('''
           CREATE TABLE shop_settings (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -115,26 +156,6 @@ class AppDatabase {
             FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
           )
         ''');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        await _ensureShopSettingsColumns(db);
-        await _ensureCustomerColumns(db);
-        await _ensureInventoryItemColumns(db);
-        if (oldVersion < 8) {
-          // Old installs defaulted to TND; Euro is the first-launch default.
-          await db.update('shop_settings', {
-            'currency_symbol': '€',
-          }, where: "currency_symbol = 'TND'");
-        }
-      },
-      onOpen: (db) async {
-        // Repair schemas when version jumped without applying ALTERs.
-        await _ensureShopSettingsColumns(db);
-        await _ensureCustomerColumns(db);
-        await _ensureInventoryItemColumns(db);
-        await _relinkOrphanedSales(db);
-      },
-    );
   }
 
   /// Sales whose customer_id was cleared by INSERT OR REPLACE on customers.

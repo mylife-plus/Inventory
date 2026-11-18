@@ -13,7 +13,9 @@ import 'package:inventory_app/features/onboarding/presentation/onboarding_page.d
 import 'package:inventory_app/features/onboarding/presentation/prefs_setup_page.dart';
 import 'package:inventory_app/features/receipts/presentation/receipt_page.dart';
 import 'package:inventory_app/features/sell/presentation/sell_page.dart';
+import 'package:inventory_app/features/settings/presentation/community_app_page.dart';
 import 'package:inventory_app/features/settings/presentation/settings_page.dart';
+import 'package:inventory_app/features/settings/presentation/synced_devices_page.dart';
 import 'package:inventory_app/features/shell/presentation/main_shell.dart';
 import 'package:inventory_app/features/splash/presentation/splash_page.dart';
 import 'package:inventory_app/features/turnover/presentation/turnover_page.dart';
@@ -25,7 +27,14 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   void bump() => gate.value++;
 
-  ref.listen(shopSettingsProvider, (_, _) => bump(), fireImmediately: true);
+  // The redirect only needs to know whether shop settings have loaded. Do not
+  // refresh the router on every save: a refresh right as a page pops itself
+  // (Receipt Details ✓) re-applied the old location and kept the page open.
+  bool loaded(AsyncValue<Object?>? v) =>
+      v != null && (v.hasValue || v.hasError);
+  ref.listen(shopSettingsProvider, (prev, next) {
+    if (prev == null || loaded(prev) != loaded(next)) bump();
+  }, fireImmediately: true);
   ref.listen(appPrefsProvider, (_, _) => bump(), fireImmediately: true);
   ref.onDispose(gate.dispose);
 
@@ -159,6 +168,31 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/settings', builder: (_, _) => const SettingsPage()),
       GoRoute(
+        path: '/settings/community',
+        pageBuilder: (context, state) => _SlideFromRightPage<void>(
+          key: state.pageKey,
+          child: const CommunityAppPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/sync',
+        pageBuilder: (context, state) => _SlideFromRightPage<void>(
+          key: state.pageKey,
+          child: const SyncedDevicesPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/sync/scan',
+        builder: (_, _) => const SyncScanPage(),
+      ),
+      GoRoute(
+        path: '/settings/sync/trash',
+        pageBuilder: (context, state) => _SlideFromRightPage<void>(
+          key: state.pageKey,
+          child: const SyncTrashPage(),
+        ),
+      ),
+      GoRoute(
         path: '/settings/receipt',
         builder: (_, _) => const ReceiptDetailsSettingsPage(),
       ),
@@ -171,3 +205,29 @@ final routerProvider = Provider<GoRouter>((ref) {
   unawaited(restoreAbandonedResale(ref.read));
   return router;
 });
+
+/// Open from right → left; back left → right (Community App).
+class _SlideFromRightPage<T> extends Page<T> {
+  const _SlideFromRightPage({required super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Route<T> createRoute(BuildContext context) {
+    return PageRouteBuilder<T>(
+      settings: this,
+      transitionDuration: const Duration(milliseconds: 280),
+      reverseTransitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (context, animation, secondaryAnimation) => child,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final offset = Tween<Offset>(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).animate(
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        );
+        return SlideTransition(position: offset, child: child);
+      },
+    );
+  }
+}

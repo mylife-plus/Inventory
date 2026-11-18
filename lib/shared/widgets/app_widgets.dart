@@ -156,6 +156,9 @@ class ClientHeader extends ConsumerWidget {
     this.filterActive = false,
     this.searchActive = false,
     this.trailing,
+    /// When false, skip top [SafeArea] (e.g. [ScrollChrome.statusBar] already
+    /// covers the status bar in a [CustomScrollView]).
+    this.includeTopSafeArea = true,
   });
 
   final int section;
@@ -172,6 +175,7 @@ class ClientHeader extends ConsumerWidget {
   final bool filterActive;
   final bool searchActive;
   final Widget? trailing;
+  final bool includeTopSafeArea;
 
   void _go(BuildContext context, int i) {
     AppHaptics.selection();
@@ -201,52 +205,54 @@ class ClientHeader extends ConsumerWidget {
       tabs[(section + 1) % 3], // next
     ];
 
-    return SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-        child: Column(
-          children: [
-            SizedBox(
-              height: 48,
-              // Client (Oct 8): the title is left-aligned, right next to the
-              // nav buttons (one small gap), not centered on the screen.
-              child: Row(
-                children: [
-                  for (var i = 0; i < leftTabs.length; i++) ...[
-                    if (i > 0) const SizedBox(width: 10),
-                    _NavIcon(
+    final body = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 48,
+            // Client (Oct 8): the title is left-aligned, right next to the
+            // nav buttons (one small gap), not centered on the screen.
+            child: Row(
+              children: [
+                for (var i = 0; i < leftTabs.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Opacity(
+                    opacity: 0.5,
+                    child: _NavIcon(
                       asset: leftTabs[i].asset,
                       onTap: () => _go(context, leftTabs[i].id),
                     ),
-                  ],
-                  const SizedBox(width: _HeaderTitle.gapAfterNav),
-                  Expanded(
-                    child: _HeaderTitle(
-                      title: title,
-                      titleAsset: titleAsset,
-                      color: p.textPrimary,
-                    ),
                   ),
-                  const SizedBox(width: 8),
-                  Pressable(
-                    onTap: () => context.push('/settings'),
-                    child: SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: Center(
-                        child: AppIcon(
-                          AppAssets.settings,
-                          size: 24,
-                          opacity: section == -1 ? 1 : 0.85,
-                        ),
+                ],
+                const SizedBox(width: _HeaderTitle.gapAfterNav),
+                Expanded(
+                  child: _HeaderTitle(
+                    title: title,
+                    titleAsset: titleAsset,
+                    color: p.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Pressable(
+                  onTap: () => context.push('/settings'),
+                  child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Center(
+                      child: AppIcon(
+                        AppAssets.settings,
+                        size: 24,
+                        opacity: 0.5,
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            if (subtitle != null && subtitle!.trim().isNotEmpty)
+          ),
+          if (subtitle != null && subtitle!.trim().isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   2 * 44 + 10 + _HeaderTitle.gapAfterNav,
@@ -312,10 +318,12 @@ class ClientHeader extends ConsumerWidget {
                   ),
                 ),
               ),
-          ],
-        ),
+        ],
       ),
     );
+
+    if (!includeTopSafeArea) return body;
+    return SafeArea(bottom: false, child: body);
   }
 }
 
@@ -1064,10 +1072,15 @@ class SectionHeader extends StatelessWidget {
           AnimatedRotation(
             turns: isOpen ? 0 : 0.5,
             duration: const Duration(milliseconds: 180),
-            child: Icon(
-              Icons.arrow_drop_down_rounded,
-              size: 36,
-              color: p.textMuted,
+            // Collapsed = blue arrow: something is hidden here (client, Nov 14).
+            child: TweenAnimationBuilder<Color?>(
+              tween: ColorTween(end: isOpen ? p.textMuted : p.fabBorder),
+              duration: const Duration(milliseconds: 180),
+              builder: (_, color, _) => Icon(
+                Icons.arrow_drop_down_rounded,
+                size: 36,
+                color: color,
+              ),
             ),
           ),
       ],
@@ -1447,7 +1460,14 @@ class AccentButton extends StatelessWidget {
             children: [
               Icon(icon, size: 18),
               const SizedBox(width: 8),
-              Text(label),
+              // Same size as before; a label too long for a narrow phone
+              // (long translations) shrinks a little instead of overflowing.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(label, maxLines: 1, softWrap: false),
+                ),
+              ),
             ],
           );
     final btn = Pressable(

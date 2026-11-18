@@ -16,9 +16,11 @@ import 'package:inventory_app/features/inventory/presentation/item_list_tools.da
 import 'package:inventory_app/features/customers/presentation/customer_list_tools.dart';
 import 'package:inventory_app/shared/widgets/app_icon.dart';
 import 'package:inventory_app/shared/widgets/app_widgets.dart';
+import 'package:inventory_app/shared/widgets/keyboard_tap_guard.dart';
 import 'package:inventory_app/shared/widgets/app_loader.dart';
 import 'package:inventory_app/shared/widgets/app_sheets.dart';
 import 'package:inventory_app/shared/widgets/local_photo.dart';
+import 'package:inventory_app/shared/widgets/scroll_chrome.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:inventory_app/core/utils/app_haptics.dart';
 
@@ -554,42 +556,8 @@ class _SellPageState extends ConsumerState<SellPage> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _cancel();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            tooltip: t('qr_scanner'),
-            onPressed: _busy ? null : _openScanner,
-            icon: AppIcon(
-              AppAssets.qrScanner,
-              size: 26,
-              color: p.textSecondary,
-            ),
-          ),
-          // Client (Oct 11): Sell Items title is centered like the
-        // sub pages; only the Inventory / Customers / Turnover tabs are
-        // left-aligned.
-        centerTitle: true,
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.shopping_cart_outlined,
-                size: 18,
-                color: p.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              Text(t('sell_items')),
-            ],
-          ),
-          actions: [
-            IconButton(
-              tooltip: t('add_items_sell'),
-              onPressed: _busy ? null : _showAddProductsSheet,
-              icon: Icon(Icons.add_rounded, size: 30, color: p.textSecondary),
-            ),
-            const SizedBox(width: 4),
-          ],
-        ),
+      child: ScrollChromeHost(
+        scrollTopHeroTag: 'scroll_top_sell',
         bottomNavigationBar: ConfirmCancelBar(
           confirmLabel: t('items_sold'),
           onCancel: _cancel,
@@ -598,68 +566,124 @@ class _SellPageState extends ConsumerState<SellPage> {
             _goCheckout();
           },
         ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Row(
-                children: [
-                  Text(
-                    t('total'),
-                    style: TextStyle(
-                      color: p.textSecondary,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    t.tr(
-                      qty == 1 ? 'cart_items_count_one' : 'cart_items_count',
-                      {'qty': formatQty(qty)},
-                    ),
-                    style: TextStyle(
-                      color: p.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    money.format(total),
-                    style: TextStyle(
-                      color: p.textPrimary,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: cart.isEmpty
-                  ? GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _busy ? null : _showAddProductsSheet,
-                      child: EmptyState(
-                        icon: Icons.shopping_cart_outlined,
-                        title: t('add_items_sell'),
-                        subtitle: t('add_items_sell_sub'),
+        builder: (context, chrome) {
+          return CustomScrollView(
+            controller: chrome.scrollController,
+            physics: kScrollChromePhysics,
+            slivers: [
+              ...ScrollChrome.headerSlivers(
+                context: context,
+              chrome: chrome,
+                header: (_) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ScrollChromeAppBar(
+                      chrome: chrome,
+                      automaticallyImplyLeading: false,
+                      leading: IconButton(
+                        tooltip: t('qr_scanner'),
+                        onPressed: _busy ? null : _openScanner,
+                        icon: AppIcon(
+                          AppAssets.qrScanner,
+                          size: 26,
+                          color: p.textSecondary,
+                        ),
                       ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                      itemCount: cart.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) {
-                        final line = cart[i];
-                        final stock =
-                            (ref.watch(inventoryItemsProvider).valueOrNull ??
-                                    [])
-                                .where((it) => it.id == line.itemId)
-                                .firstOrNull;
-                        final photo =
-                            (line.photoPath != null &&
+                      title: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.shopping_cart_outlined,
+                            size: 18,
+                            color: p.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(t('sell_items')),
+                        ],
+                      ),
+                      actions: [
+                        IconButton(
+                          tooltip: t('add_items_sell'),
+                          onPressed: _busy ? null : _showAddProductsSheet,
+                          icon: Icon(
+                            Icons.add_rounded,
+                            size: 30,
+                            color: p.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: Row(
+                        children: [
+                          Text(
+                            t('total'),
+                            style: TextStyle(
+                              color: p.textSecondary,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            t.tr(
+                              qty == 1
+                                  ? 'cart_items_count_one'
+                                  : 'cart_items_count',
+                              {'qty': formatQty(qty)},
+                            ),
+                            style: TextStyle(
+                              color: p.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            money.format(total),
+                            style: TextStyle(
+                              color: p.textPrimary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (cart.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _busy ? null : _showAddProductsSheet,
+                    child: EmptyState(
+                      icon: Icons.shopping_cart_outlined,
+                      title: t('add_items_sell'),
+                      subtitle: t('add_items_sell_sub'),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) {
+                        final lineIndex = i ~/ 2;
+                        if (i.isOdd) return const SizedBox(height: 8);
+                        final line = cart[lineIndex];
+                        final stock = (ref
+                                    .watch(inventoryItemsProvider)
+                                    .valueOrNull ??
+                                [])
+                            .where((it) => it.id == line.itemId)
+                            .firstOrNull;
+                        final photo = (line.photoPath != null &&
                                 line.photoPath!.isNotEmpty)
                             ? line.photoPath
                             : stock?.photoPath;
@@ -670,10 +694,13 @@ class _SellPageState extends ConsumerState<SellPage> {
                           onEdit: () => _adjustCartQty(line),
                         );
                       },
+                      childCount: cart.isEmpty ? 0 : cart.length * 2 - 1,
                     ),
-            ),
-          ],
-        ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -755,6 +782,7 @@ class _SellProductCard extends StatelessWidget {
     required this.addLabel,
     required this.onAdd,
     required this.onQty,
+    required this.onDelete,
   });
 
   final InventoryItem item;
@@ -764,6 +792,7 @@ class _SellProductCard extends StatelessWidget {
   final String addLabel;
   final VoidCallback onAdd;
   final ValueChanged<double> onQty;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -823,10 +852,7 @@ class _SellProductCard extends StatelessWidget {
                           color: Colors.transparent,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              AppHaptics.light();
-                              onQty(0);
-                            },
+                            onTap: onDelete,
                             child: SizedBox(
                               width: 30,
                               height: 30,
@@ -1020,6 +1046,10 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
   late final List<SaleLine> _snapshot;
   bool _leaving = false;
 
+  /// First tap while a quantity / search keyboard is open only closes it.
+  final _tapGuard = GlobalKey<KeyboardTapGuardState>();
+  bool _dismissOnly() => _tapGuard.currentState?.consumeDismissTap() ?? false;
+
   @override
   void initState() {
     super.initState();
@@ -1121,101 +1151,127 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _cancel();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          // Client: "Add Items" is centered (exception to left-aligned titles).
-          centerTitle: true,
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const AppIcon(AppAssets.inventory, size: 24),
-              const SizedBox(width: 8),
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(t('add_items')),
-                ),
-              ),
-            ],
-          ),
-        ),
-        bottomNavigationBar: ConfirmCancelBar(
+      child: ScrollChromeHost(
+        scrollTopHeroTag: 'scroll_top_sell_add',
+        // Floating over the list (no bar background), hides on scroll down.
+        floatingBottomBar: ConfirmCancelBar(
           onCancel: _cancel,
           onConfirm: _leave,
         ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              child: Row(
-                children: [
-                  Text(
-                    t('total'),
-                    style: TextStyle(
-                      color: p.textSecondary,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 15,
+        builder: (context, chrome) {
+          return KeyboardTapGuard(
+            key: _tapGuard,
+            child: CustomScrollView(
+            controller: chrome.scrollController,
+            physics: kScrollChromePhysics,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            slivers: [
+              ...ScrollChrome.headerSlivers(
+                context: context,
+              chrome: chrome,
+                header: (_) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ScrollChromeAppBar(
+                      chrome: chrome,
+                      automaticallyImplyLeading: false,
+                      title: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const AppIcon(AppAssets.inventory, size: 24),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(t('add_items')),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    t.tr(
-                      cartCount == 1
-                          ? 'cart_items_count_one'
-                          : 'cart_items_count',
-                      {'qty': formatQty(cartCount)},
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                      child: Row(
+                        children: [
+                          Text(
+                            t('total'),
+                            style: TextStyle(
+                              color: p.textSecondary,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            t.tr(
+                              cartCount == 1
+                                  ? 'cart_items_count_one'
+                                  : 'cart_items_count',
+                              {'qty': formatQty(cartCount)},
+                            ),
+                            style: TextStyle(
+                              color: p.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            money.format(cartTotal),
+                            style: TextStyle(
+                              color: p.textPrimary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    style: TextStyle(
-                      color: p.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                      child: ListActionIconsRow(
+                        onSort: _showSortSheet,
+                        onFilter: _showFilterSheet,
+                        onSearch: () =>
+                            setState(() => _showSearch = !_showSearch),
+                        sortActive: _sort != kDefaultItemSort,
+                        filterActive: _categoryFilter != null,
+                        searchActive:
+                            _showSearch || _search.text.trim().isNotEmpty,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    money.format(cartTotal),
-                    style: TextStyle(
-                      color: p.textPrimary,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
+                    if (_showSearch)
+                      AppSearchField(
+                        controller: _search,
+                        hintText: t('search'),
+                        onChanged: (_) => setState(() {}),
+                        onDismiss: () {
+                          if (mounted) setState(() => _showSearch = false);
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              ...itemsAsync.when(
+                loading: () => const <Widget>[
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: AppLoader(),
                   ),
                 ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-              child: ListActionIconsRow(
-                onSort: _showSortSheet,
-                onFilter: _showFilterSheet,
-                onSearch: () => setState(() => _showSearch = !_showSearch),
-                sortActive: _sort != kDefaultItemSort,
-                filterActive: _categoryFilter != null,
-                searchActive: _showSearch || _search.text.trim().isNotEmpty,
-              ),
-            ),
-            if (_showSearch)
-              AppSearchField(
-                controller: _search,
-                hintText: t('search'),
-                onChanged: (_) => setState(() {}),
-                onDismiss: () {
-                  if (mounted) setState(() => _showSearch = false);
-                },
-              ),
-            Expanded(
-              child: itemsAsync.when(
-                loading: () => const AppLoader(),
-                error: (e, _) => Center(child: Text('$e')),
+                error: (e, _) => <Widget>[
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: Text('$e')),
+                  ),
+                ],
                 data: (allItems) {
                   final q = _search.text.trim().toLowerCase();
                   final filtered = sortItems(
                     allItems.where((item) {
-                      final matchQ =
-                          q.isEmpty || item.title.toLowerCase().contains(q);
-                      final matchC =
-                          _categoryFilter == null ||
+                      final matchQ = q.isEmpty ||
+                          item.title.toLowerCase().contains(q);
+                      final matchC = _categoryFilter == null ||
                           item.categoryId == _categoryFilter;
                       return matchQ && matchC;
                     }).toList(),
@@ -1223,11 +1279,16 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
                   );
 
                   if (filtered.isEmpty) {
-                    return EmptyState(
-                      icon: Icons.inventory_2_outlined,
-                      title: t('no_items'),
-                      subtitle: t('add_first_item'),
-                    );
+                    return <Widget>[
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: EmptyState(
+                          icon: Icons.inventory_2_outlined,
+                          title: t('no_items'),
+                          subtitle: t('add_first_item'),
+                        ),
+                      ),
+                    ];
                   }
 
                   final grouped = <String, List<InventoryItem>>{};
@@ -1237,52 +1298,84 @@ class _SellAddProductsPageState extends ConsumerState<SellAddProductsPage> {
                   }
                   final sortedEntries = grouped.entries.toList()
                     ..sort(
-                      (a, b) =>
-                          a.key.toLowerCase().compareTo(b.key.toLowerCase()),
+                      (a, b) => a.key
+                          .toLowerCase()
+                          .compareTo(b.key.toLowerCase()),
                     );
 
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    children: [
-                      ...sortedEntries.expand((entry) {
-                        final open = !_collapsed.contains(entry.key);
-                        return [
-                          SectionHeader(
-                            title: entry.key,
-                            expanded: open,
-                            onToggle: () => setState(() {
-                              if (open) {
-                                _collapsed.add(entry.key);
-                              } else {
-                                _collapsed.remove(entry.key);
-                              }
-                            }),
-                          ),
-                          if (open)
-                            ...entry.value.map(
-                              (item) => Padding(
-                                key: ValueKey('sell-add-${item.id}'),
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: _SellProductCard(
-                                  item: item,
-                                  money: money,
-                                  cartQty: cartQtyById[item.id],
-                                  maxQty: _maxFor(item),
-                                  addLabel: t('add').toLowerCase(),
-                                  onAdd: () => _addItem(item),
-                                  onQty: (q) => _setQty(item, q),
-                                ),
-                              ),
+                  final rows = <Widget>[];
+                  for (final entry in sortedEntries) {
+                    final open = !_collapsed.contains(entry.key);
+                    rows.add(
+                      SectionHeader(
+                        title: entry.key,
+                        expanded: open,
+                        onToggle: () {
+                          // Quantity keyboard open: this tap only closes it;
+                          // the category stays as it is (client, Nov 14).
+                          if (_dismissOnly()) return;
+                          setState(() {
+                            if (open) {
+                              _collapsed.add(entry.key);
+                            } else {
+                              _collapsed.remove(entry.key);
+                            }
+                          });
+                        },
+                      ),
+                    );
+                    if (open) {
+                      for (final item in entry.value) {
+                        rows.add(
+                          Padding(
+                            key: ValueKey('sell-add-${item.id}'),
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _SellProductCard(
+                              item: item,
+                              money: money,
+                              cartQty: cartQtyById[item.id],
+                              maxQty: _maxFor(item),
+                              addLabel: t('add').toLowerCase(),
+                              onAdd: () {
+                                if (_dismissOnly()) return;
+                                _addItem(item);
+                              },
+                              onQty: (q) => _setQty(item, q),
+                              onDelete: () {
+                                if (_dismissOnly()) return;
+                                AppHaptics.light();
+                                _setQty(item, 0);
+                              },
                             ),
-                        ];
-                      }),
-                    ],
-                  );
+                          ),
+                        );
+                      }
+                    }
+                  }
+
+                  return <Widget>[
+                    SliverPadding(
+                      // Room for the floating ✕ / ✓ so the last card can
+                      // scroll clear of them.
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        0,
+                        16,
+                        24 +
+                            kFloatingBottomBarHeight +
+                            MediaQuery.paddingOf(context).bottom,
+                      ),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate(rows),
+                      ),
+                    ),
+                  ];
                 },
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+          );
+        },
       ),
     );
   }
@@ -1760,12 +1853,11 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
 
   Future<void> _loadStats(List<Customer> list) async {
     final repo = ref.read(customerRepositoryProvider);
-    final next = <String, CustomerStats>{};
-    for (final c in list) {
-      next[c.id] = await repo.stats(c.id);
-    }
+    final entries = await Future.wait(
+      list.map((c) async => MapEntry(c.id, await repo.stats(c.id))),
+    );
     if (!mounted) return;
-    setState(() => _stats = next);
+    setState(() => _stats = {for (final e in entries) e.key: e.value});
   }
 
   Future<void> _showSortSheet() async {
@@ -1876,43 +1968,75 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
     );
     final q = _search.text.trim().toLowerCase();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(t('select_customer')),
-        actions: [
-          IconButton(
-            tooltip: t('new_customer'),
-            onPressed: _busy ? null : () => context.push('/customers/new'),
-            icon: Icon(Icons.add_rounded, size: 28, color: p.textSecondary),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            child: ListActionIconsRow(
-              onSort: _showSortSheet,
-              onFilter: _showFilterSheet,
-              onSearch: () => setState(() => _showSearch = !_showSearch),
-              sortActive: _sort != kDefaultCustomerSort,
-              filterActive: _filter.isActive,
-              searchActive: _showSearch || _search.text.trim().isNotEmpty,
+    return ScrollChromeHost(
+      scrollTopHeroTag: 'scroll_top_select_customer',
+      builder: (context, chrome) {
+        return CustomScrollView(
+          controller: chrome.scrollController,
+          physics: kScrollChromePhysics,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          slivers: [
+            ...ScrollChrome.headerSlivers(
+              context: context,
+              chrome: chrome,
+              header: (_) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ScrollChromeAppBar(
+                    chrome: chrome,
+                    title: Text(t('select_customer')),
+                    actions: [
+                      IconButton(
+                        tooltip: t('new_customer'),
+                        onPressed: _busy
+                            ? null
+                            : () => context.push('/customers/new'),
+                        icon: Icon(
+                          Icons.add_rounded,
+                          size: 28,
+                          color: p.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    child: ListActionIconsRow(
+                      onSort: _showSortSheet,
+                      onFilter: _showFilterSheet,
+                      onSearch: () =>
+                          setState(() => _showSearch = !_showSearch),
+                      sortActive: _sort != kDefaultCustomerSort,
+                      filterActive: _filter.isActive,
+                      searchActive:
+                          _showSearch || _search.text.trim().isNotEmpty,
+                    ),
+                  ),
+                  if (_showSearch)
+                    AppSearchField(
+                      controller: _search,
+                      hintText: t('search'),
+                      onChanged: (_) => setState(() {}),
+                      onDismiss: () {
+                        if (mounted) setState(() => _showSearch = false);
+                      },
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (_showSearch)
-            AppSearchField(
-              controller: _search,
-              hintText: t('search'),
-              onChanged: (_) => setState(() {}),
-              onDismiss: () {
-                if (mounted) setState(() => _showSearch = false);
-              },
-            ),
-          Expanded(
-            child: customers.when(
-              loading: () => const AppLoader(),
-              error: (e, _) => Center(child: Text('$e')),
+            ...customers.when(
+              loading: () => const <Widget>[
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: AppLoader(),
+                ),
+              ],
+              error: (e, _) => <Widget>[
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Text('$e')),
+                ),
+              ],
               data: (list) {
                 final key = list.map((c) => c.id).join(',');
                 if (key != _statsKey) {
@@ -1933,41 +2057,45 @@ class _SelectCustomerPageState extends ConsumerState<SelectCustomerPage> {
                   _stats,
                 );
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  children: [
-                    FadeSlide(
-                      child: CustomerListCard(
-                        name: t('guest'),
-                        money: money,
-                        naStats: true,
-                        onTap: _busy ? null : () => _onPick(null),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...filtered.map(
-                      (c) => Padding(
-                        key: ValueKey('pick-${c.id}'),
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: FadeSlide(
-                          child: SelectCustomerTile(
-                            customer: c,
+                return <Widget>[
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        FadeSlide(
+                          child: CustomerListCard(
+                            name: t('guest'),
                             money: money,
-                            // Client: contact icons are display only here
-                            // (no call / mail / maps), like Send Receipt.
-                            contactsInteractive: false,
-                            onTap: _busy ? () {} : () => _onPick(c),
+                            naStats: true,
+                            onTap: _busy ? null : () => _onPick(null),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        ...filtered.map(
+                          (c) => Padding(
+                            key: ValueKey('pick-${c.id}'),
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: FadeSlide(
+                              child: SelectCustomerTile(
+                                customer: c,
+                                money: money,
+                                // Client: contact icons are display only here
+                                // (no call / mail / maps), like Send Receipt.
+                                contactsInteractive: false,
+                                onTap: _busy ? () {} : () => _onPick(c),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ]),
                     ),
-                  ],
-                );
+                  ),
+                ];
               },
             ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 }
