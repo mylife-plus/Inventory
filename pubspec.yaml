@@ -41,7 +41,9 @@ dependencies:
   cryptography: ^2.9.0
   http: ^1.6.0
   community_package:
-    path: ../community_package
+    git:
+      url: https://github.com/mylife-plus/Community-Package.git
+      ref: m1
 
 dev_dependencies:
   flutter_test:

@@ -11,7 +11,7 @@ import 'package:inventory_app/core/web/web_sqlite.dart';
 import 'package:inventory_app/data/reset/app_reset.dart';
 
 /// Backend of the community feedback screens (Settings → Community App).
-const _communityBackendUrl = 'https://community-dev.qureshicreatives.workers.dev';
+const _communityBackendUrl = 'https://api.mylife.plus';
 
 /// A screen title from [S] in the app's current language.
 String Function(BuildContext) _title(String key) =>
