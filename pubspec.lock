@@ -93,8 +93,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "m1.1"
-      resolved-ref: "280a5812e5caabf431f235138fee484a01893150"
+      ref: "m1.2"
+      resolved-ref: fe67dfc71298b52be41723e94967770cdf4f050f
       url: "https://github.com/mylife-plus/Community-Package.git"
     source: git
     version: "0.0.1"

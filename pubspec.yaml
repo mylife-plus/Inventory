@@ -43,7 +43,7 @@ dependencies:
   community_package:
     git:
       url: https://github.com/mylife-plus/Community-Package.git
-      ref: m1.1
+      ref: m1.2
 
 dev_dependencies:
   flutter_test:
