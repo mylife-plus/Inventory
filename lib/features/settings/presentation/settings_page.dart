@@ -109,6 +109,10 @@ class SettingsPage extends ConsumerWidget {
                           fontSize: 20,
                           fontFamily: 'Apple Color Emoji',
                           fontFamilyFallback: ['Noto Color Emoji'],
+                          // The emoji font's own line is ~29 high, which made
+                          // these rows taller than the ones below.
+                          height: 1,
+                          leadingDistribution: TextLeadingDistribution.even,
                         ),
                       ),
                       title: t('community_app'),
@@ -121,6 +125,10 @@ class SettingsPage extends ConsumerWidget {
                           fontSize: 20,
                           fontFamily: 'Apple Color Emoji',
                           fontFamilyFallback: ['Noto Color Emoji'],
+                          // The emoji font's own line is ~29 high, which made
+                          // these rows taller than the ones below.
+                          height: 1,
+                          leadingDistribution: TextLeadingDistribution.even,
                         ),
                       ),
                       title: t('give_feedback'),
