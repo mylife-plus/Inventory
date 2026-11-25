@@ -458,6 +458,7 @@ class _SellPageState extends ConsumerState<SellPage> {
         : stock?.photoPath;
     final t = ref.read(tProvider);
     var qty = line.quantity;
+    final qtyKey = GlobalKey<QtyStepperState>();
 
     final applied = await showAppSheet<double>(
       context: context,
@@ -500,6 +501,7 @@ class _SellPageState extends ConsumerState<SellPage> {
                               ),
                               const SizedBox(height: 12),
                               QtyStepper(
+                                key: qtyKey,
                                 value: qty,
                                 max: maxQty,
                                 onChanged: (q) => setModal(() => qty = q),
@@ -514,7 +516,12 @@ class _SellPageState extends ConsumerState<SellPage> {
                   ConfirmCancelBar(
                     onCancel: () => Navigator.pop(ctx),
                     onDelete: () => Navigator.pop(ctx, 0.0),
-                    onConfirm: () => Navigator.pop(ctx, qty),
+                    // Commit typed text first — Check while focused used to
+                    // pop the old [qty] and ignore the field.
+                    onConfirm: () => Navigator.pop(
+                      ctx,
+                      qtyKey.currentState?.commitEdit() ?? qty,
+                    ),
                   ),
                 ],
               );

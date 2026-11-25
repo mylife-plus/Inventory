@@ -1715,10 +1715,10 @@ class QtyStepper extends StatefulWidget {
   final double step;
 
   @override
-  State<QtyStepper> createState() => _QtyStepperState();
+  State<QtyStepper> createState() => QtyStepperState();
 }
 
-class _QtyStepperState extends State<QtyStepper> {
+class QtyStepperState extends State<QtyStepper> {
   late final TextEditingController _controller;
   late final FocusNode _focus;
   bool _editing = false;
@@ -1808,6 +1808,27 @@ class _QtyStepperState extends State<QtyStepper> {
       return;
     }
     _emit(parsed);
+  }
+
+  /// Applies any in-progress typed value (e.g. before a Check tap) and returns it.
+  ///
+  /// Tapping Confirm while the field is still focused used to skip [_commit],
+  /// so the parent kept the old quantity.
+  double commitEdit() {
+    if (_disposed || !mounted) return widget.value;
+    _editing = false;
+    final parsed = _parse(_controller.text);
+    if (parsed == null) {
+      _controller.text = _format(widget.value);
+      return widget.value;
+    }
+    final clamped = _clamp(parsed);
+    final text = _format(clamped);
+    if (_controller.text != text) _controller.text = text;
+    if ((clamped - widget.value).abs() >= 1e-9) {
+      widget.onChanged(clamped);
+    }
+    return clamped;
   }
 
   @override
